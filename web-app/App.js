@@ -6,7 +6,7 @@ import './global.css';
 // Google Calendar API Configuration
 const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_API_KEY || 'AIzaSyDlyIl0Z3YoH89NL5aa2OZVY2xysjYO0o8';
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '959515304842-8i8ljtopi6d2gvtp6vpvg1c6u8l1ohp2.apps.googleusercontent.com';
-const CALENDAR_IDS = (process.env.REACT_APP_CALENDAR_IDS || 'primary').split(',');
+const CALENDAR_IDS = (process.env.REACT_APP_CALENDAR_IDS || 'primary,amandap.sawyer@gmail.com').split(',');
 const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Weekend'];
@@ -16,11 +16,8 @@ const FamilyDashboard = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [users, setUsers] = useState([]);
   const [tasks, setTasks] = useState([
-    { id: 1, name: 'Make Bed', points: 1, assignedTo: 'Nolan', completed: false, recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], time: '8:00 AM' },
   ]);
   const [rewards, setRewards] = useState([
-    { id: 1, name: 'Ice Cream', cost: 5 },
-    { id: 2, name: 'Movie Night', cost: 10 },
   ]);
   const [userPoints, setUserPoints] = useState({});
   const [calendarEvents, setCalendarEvents] = useState([]);
