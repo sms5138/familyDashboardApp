@@ -33,7 +33,7 @@ async function ensureDataDir() {
 async function initializeDataFiles() {
   const defaultData = {
     tasks: [
-      { id: 1, name: 'Make Bed', points: 1, assignedTo: 'Nolan', completed: false, recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], time: '8:00 AM' },
+      { id: 1, name: 'Make Bed', points: 1, assignedTo: 'Nolan', completed: false, recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], period: 'Morning' },
     ],
     rewards: [
       { id: 1, name: 'Ice Cream', cost: 5 },
@@ -69,8 +69,8 @@ async function initializeDataFiles() {
 
 async function readDataFile(filename) {
   try {
-    // Use web-app/data for users and tasks, storage-server/data for everything else
-    const dataDir = (filename === 'users' || filename === 'tasks') ? WEB_APP_DATA_DIR : DATA_DIR;
+    // Use web-app/data for users, tasks, and rewards; storage-server/data for everything else
+    const dataDir = (filename === 'users' || filename === 'tasks' || filename === 'rewards') ? WEB_APP_DATA_DIR : DATA_DIR;
     const filePath = path.join(dataDir, `${filename}.json`);
     const data = await fs.readFile(filePath, 'utf8');
     return JSON.parse(data);
@@ -82,8 +82,8 @@ async function readDataFile(filename) {
 
 async function writeDataFile(filename, data) {
   try {
-    // Use web-app/data for users and tasks, storage-server/data for everything else
-    const dataDir = (filename === 'users' || filename === 'tasks') ? WEB_APP_DATA_DIR : DATA_DIR;
+    // Use web-app/data for users, tasks, and rewards; storage-server/data for everything else
+    const dataDir = (filename === 'users' || filename === 'tasks' || filename === 'rewards') ? WEB_APP_DATA_DIR : DATA_DIR;
     const filePath = path.join(dataDir, `${filename}.json`);
 
     // Ensure directory exists

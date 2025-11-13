@@ -9,7 +9,7 @@ const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || 'YOUR_CLIENT_
 const CALENDAR_IDS = (process.env.REACT_APP_CALENDAR_IDS || 'primary').split(',');
 const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Weekend'];
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 const FamilyDashboard = () => {
@@ -31,14 +31,21 @@ const FamilyDashboard = () => {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showRewardModal, setShowRewardModal] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pendingReward, setPendingReward] = useState(null);
+  const [showConfetti, setShowConfetti] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [newUser, setNewUser] = useState({ name: '', type: 'Child', points: 0 });
+  const [editingReward, setEditingReward] = useState(null);
+  const [editingTask, setEditingTask] = useState(null);
+  const [hideParents, setHideParents] = useState(true);
+  const [newUser, setNewUser] = useState({ name: '', type: 'Child', points: 0, pin: '' });
   const [newTask, setNewTask] = useState({
     name: '',
     points: 1,
     assignedTo: users[0]?.name || '',
     recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-    time: '9:00 AM'
+    period: 'Morning'
   });
   const [newReward, setNewReward] = useState({ name: '', cost: 5 });
 
@@ -47,10 +54,11 @@ const FamilyDashboard = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Load users and tasks from API
+  // Load users, tasks, and rewards from API
   useEffect(() => {
     loadUsers();
     loadTasks();
+    loadRewards();
   }, []);
 
   const loadUsers = async () => {
@@ -95,6 +103,19 @@ const FamilyDashboard = () => {
     }
   };
 
+  const loadRewards = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/rewards`);
+      const result = await response.json();
+      if (result.success && result.data) {
+        setRewards(result.data);
+      }
+    } catch (error) {
+      console.error('Error loading rewards:', error);
+      // Keep default rewards if API fails
+    }
+  };
+
   const saveUsers = async (updatedUsers) => {
     try {
       await fetch(`${API_URL}/api/users`, {
@@ -124,6 +145,22 @@ const FamilyDashboard = () => {
       });
     } catch (error) {
       console.error('Error saving tasks:', error);
+    }
+  };
+
+  const saveRewards = async (updatedRewards) => {
+    try {
+      await fetch(`${API_URL}/api/rewards`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          data: updatedRewards
+        }),
+      });
+    } catch (error) {
+      console.error('Error saving rewards:', error);
     }
   };
 
@@ -301,15 +338,17 @@ const FamilyDashboard = () => {
         points: 1,
         assignedTo: users[0]?.name || '',
         recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-        time: '9:00 AM'
+        period: 'Morning'
       });
       setShowTaskModal(false);
     }
   };
 
-  const addReward = () => {
+  const addReward = async () => {
     if (newReward.name.trim()) {
-      setRewards([...rewards, { ...newReward, id: Date.now() }]);
+      const updatedRewards = [...rewards, { ...newReward, id: Date.now() }];
+      setRewards(updatedRewards);
+      await saveRewards(updatedRewards);
       setNewReward({ name: '', cost: 5 });
       setShowRewardModal(false);
     }
@@ -338,23 +377,57 @@ const FamilyDashboard = () => {
     await updateUserPoints(task.assignedTo, newPoints);
   };
 
-  const redeemReward = async (reward, user) => {
-    if (userPoints[user] >= reward.cost) {
-      const newPoints = userPoints[user] - reward.cost;
-      await updateUserPoints(user, newPoints);
-      alert(`🎉 ${user} redeemed ${reward.name}!`);
+  const redeemReward = async (reward, userName) => {
+    // Check if user has enough points
+    if (userPoints[userName] < reward.cost) {
+      alert(`${userName} needs ${reward.cost - userPoints[userName]} more points!`);
+      return;
+    }
+
+    // Find the user object
+    const userObj = users.find(u => u.name === userName);
+
+    // If user is a child, require PIN verification
+    if (userObj && userObj.type === 'Child') {
+      setPendingReward({ userName, reward });
+      setShowPinModal(true);
     } else {
-      alert(`${user} needs ${reward.cost - userPoints[user]} more points!`);
+      // Parent user, no PIN needed
+      const newPoints = userPoints[userName] - reward.cost;
+      await updateUserPoints(userName, newPoints);
+      triggerConfetti();
     }
   };
 
   const toggleDay = (day) => {
-    setNewTask(prev => ({
-      ...prev,
-      recurrence: prev.recurrence.includes(day)
-        ? prev.recurrence.filter(d => d !== day)
-        : [...prev.recurrence, day]
-    }));
+    setNewTask(prev => {
+      let newRecurrence;
+
+      if (day === 'Weekend') {
+        // If toggling Weekend
+        if (prev.recurrence.includes('Weekend')) {
+          // Remove Weekend
+          newRecurrence = prev.recurrence.filter(d => d !== 'Weekend');
+        } else {
+          // Add Weekend and remove Sat/Sun if present
+          newRecurrence = [...prev.recurrence.filter(d => d !== 'Sat' && d !== 'Sun'), 'Weekend'];
+        }
+      } else if (day === 'Sat' || day === 'Sun') {
+        // If toggling Sat or Sun, remove Weekend if present
+        if (prev.recurrence.includes(day)) {
+          newRecurrence = prev.recurrence.filter(d => d !== day);
+        } else {
+          newRecurrence = [...prev.recurrence.filter(d => d !== 'Weekend'), day];
+        }
+      } else {
+        // Normal toggle for weekdays
+        newRecurrence = prev.recurrence.includes(day)
+          ? prev.recurrence.filter(d => d !== day)
+          : [...prev.recurrence, day];
+      }
+
+      return { ...prev, recurrence: newRecurrence };
+    });
   };
 
   const formatTime = (date) => {
@@ -371,7 +444,7 @@ const FamilyDashboard = () => {
       setUsers(updatedUsers);
       setUserPoints(prev => ({ ...prev, [newUser.name]: newUser.points }));
       await saveUsers(updatedUsers);
-      setNewUser({ name: '', type: 'Child', points: 0 });
+      setNewUser({ name: '', type: 'Child', points: 0, pin: '' });
       setShowUserModal(false);
     }
   };
@@ -409,7 +482,7 @@ const FamilyDashboard = () => {
       }
 
       await saveUsers(updatedUsers);
-      setNewUser({ name: '', type: 'Child', points: 0 });
+      setNewUser({ name: '', type: 'Child', points: 0, pin: '' });
       setEditingUser(null);
       setShowUserModal(false);
     }
@@ -438,7 +511,125 @@ const FamilyDashboard = () => {
   const closeUserModal = () => {
     setShowUserModal(false);
     setEditingUser(null);
-    setNewUser({ name: '', type: 'Child', points: 0 });
+    setNewUser({ name: '', type: 'Child', points: 0, pin: '' });
+  };
+
+  const triggerConfetti = () => {
+    setShowConfetti(true);
+    setTimeout(() => setShowConfetti(false), 4000); // Hide after 4 seconds
+  };
+
+  const validatePin = (enteredPin) => {
+    // Check if any parent user has this PIN
+    return users.some(user => user.type === 'Parent' && user.pin === enteredPin);
+  };
+
+  const handlePinSubmit = () => {
+    if (validatePin(pinInput)) {
+      // PIN is correct, process the reward redemption
+      if (pendingReward) {
+        const { userName, reward } = pendingReward;
+        const user = users.find(u => u.name === userName);
+
+        if (user && user.points >= reward.cost) {
+          updateUserPoints(userName, user.points - reward.cost);
+          triggerConfetti();
+        }
+      }
+
+      // Close modal and reset
+      setShowPinModal(false);
+      setPinInput('');
+      setPendingReward(null);
+    } else {
+      // PIN is incorrect
+      alert('Incorrect PIN. Please ask a parent for help.');
+      setPinInput('');
+    }
+  };
+
+  const closePinModal = () => {
+    setShowPinModal(false);
+    setPinInput('');
+    setPendingReward(null);
+  };
+
+  const editReward = (index) => {
+    setEditingReward(index);
+    setNewReward(rewards[index]);
+    setShowRewardModal(true);
+  };
+
+  const saveEditedReward = async () => {
+    if (newReward.name.trim() && editingReward !== null) {
+      const updatedRewards = [...rewards];
+      updatedRewards[editingReward] = newReward;
+      setRewards(updatedRewards);
+      await saveRewards(updatedRewards);
+      setNewReward({ name: '', cost: 5 });
+      setEditingReward(null);
+      setShowRewardModal(false);
+    }
+  };
+
+  const deleteReward = async (index) => {
+    const rewardToDelete = rewards[index];
+    if (window.confirm(`Are you sure you want to delete ${rewardToDelete.name}?`)) {
+      const updatedRewards = rewards.filter((_, i) => i !== index);
+      setRewards(updatedRewards);
+      await saveRewards(updatedRewards);
+    }
+  };
+
+  const closeRewardModal = () => {
+    setShowRewardModal(false);
+    setEditingReward(null);
+    setNewReward({ name: '', cost: 5 });
+  };
+
+  const editTask = (index) => {
+    setEditingTask(index);
+    setNewTask(tasks[index]);
+    setShowTaskModal(true);
+  };
+
+  const saveEditedTask = async () => {
+    if (newTask.name.trim() && editingTask !== null) {
+      const updatedTasks = [...tasks];
+      updatedTasks[editingTask] = newTask;
+      setTasks(updatedTasks);
+      await saveTasks(updatedTasks);
+      setNewTask({
+        name: '',
+        points: 1,
+        assignedTo: users[0]?.name || '',
+        recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        period: 'Morning'
+      });
+      setEditingTask(null);
+      setShowTaskModal(false);
+    }
+  };
+
+  const deleteTask = async (index) => {
+    const taskToDelete = tasks[index];
+    if (window.confirm(`Are you sure you want to delete "${taskToDelete.name}"?`)) {
+      const updatedTasks = tasks.filter((_, i) => i !== index);
+      setTasks(updatedTasks);
+      await saveTasks(updatedTasks);
+    }
+  };
+
+  const closeTaskModal = () => {
+    setShowTaskModal(false);
+    setEditingTask(null);
+    setNewTask({
+      name: '',
+      points: 1,
+      assignedTo: users[0]?.name || '',
+      recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+      period: 'Morning'
+    });
   };
 
   return (
@@ -560,7 +751,7 @@ const FamilyDashboard = () => {
                       {task.name}
                     </div>
                     <div className="text-sm text-slate-400 mt-1">
-                      {task.assignedTo} • {task.points} pts • {task.time} • {task.recurrence.join(', ')}
+                      {task.assignedTo} • {task.points} pts • {task.period || task.time || 'Morning'} • {task.recurrence.join(', ')}
                     </div>
                   </div>
                 </div>
@@ -582,8 +773,20 @@ const FamilyDashboard = () => {
                 <Users size={20} />
               </button>
             </div>
+            <div className="flex items-center gap-2 mb-3 text-sm">
+              <input
+                type="checkbox"
+                id="hideParents"
+                checked={hideParents}
+                onChange={(e) => setHideParents(e.target.checked)}
+                className="w-4 h-4 accent-teal-600 cursor-pointer"
+              />
+              <label htmlFor="hideParents" className="text-slate-300 cursor-pointer">
+                Hide parents
+              </label>
+            </div>
             <div className="space-y-3">
-              {users.map(user => (
+              {users.filter(user => !hideParents || user.type !== 'Parent').map(user => (
                 <div key={user.name} className="bg-white/10 p-4 rounded-xl flex justify-between items-center">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-full flex items-center justify-center font-bold">
@@ -622,7 +825,7 @@ const FamilyDashboard = () => {
                     <div className="text-yellow-400 text-sm">{reward.cost} points</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {users.map(user => (
+                    {users.filter(user => !hideParents || user.type !== 'Parent').map(user => (
                       <button
                         key={user.name}
                         onClick={() => redeemReward(reward, user.name)}
@@ -644,129 +847,211 @@ const FamilyDashboard = () => {
         </div>
       </div>
 
-      {/* Add Task Modal */}
+      {/* Task Management Modal */}
       {showTaskModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-          <div className="bg-slate-900 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+          <div className="bg-slate-900 rounded-2xl p-8 max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-bold">Add Task</h3>
-              <button onClick={() => setShowTaskModal(false)}>
+              <h3 className="text-2xl font-bold">Manage Tasks</h3>
+              <button onClick={closeTaskModal}>
                 <X size={24} className="text-slate-400 hover:text-white" />
               </button>
             </div>
 
-            <input
-              type="text"
-              placeholder="Task name"
-              value={newTask.name}
-              onChange={(e) => setNewTask({...newTask, name: e.target.value})}
-              className="w-full bg-white/10 p-3 rounded-lg mb-4 text-white placeholder-slate-400"
-            />
-
-            <div className="mb-4">
-              <label className="text-sm text-slate-400 mb-2 block">Points:</label>
-              <input
-                type="number"
-                value={newTask.points}
-                onChange={(e) => setNewTask({...newTask, points: parseInt(e.target.value) || 0})}
-                className="w-full bg-white/10 p-3 rounded-lg text-white"
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className="text-sm text-slate-400 mb-2 block">Assign to:</label>
-              <div className="flex flex-wrap gap-2">
-                {users.map(user => (
-                  <button
-                    key={user.name}
-                    onClick={() => setNewTask({...newTask, assignedTo: user.name})}
-                    className={`px-4 py-2 rounded-lg font-medium transition ${
-                      newTask.assignedTo === user.name
-                        ? 'bg-teal-600'
-                        : 'bg-white/10 hover:bg-white/20'
-                    }`}
-                  >
-                    {user.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label className="text-sm text-slate-400 mb-2 block">Repeat on:</label>
-              <div className="flex flex-wrap gap-2">
-                {DAYS.map(day => (
-                  <button
-                    key={day}
-                    onClick={() => toggleDay(day)}
-                    className={`px-3 py-2 rounded-lg font-medium transition ${
-                      newTask.recurrence.includes(day)
-                        ? 'bg-teal-600'
-                        : 'bg-white/10 hover:bg-white/20'
-                    }`}
-                  >
-                    {day}
-                  </button>
-                ))}
-              </div>
-            </div>
-
+            {/* Existing Tasks List */}
             <div className="mb-6">
-              <label className="text-sm text-slate-400 mb-2 block">Time:</label>
+              <h4 className="text-lg font-semibold mb-3">Current Tasks</h4>
+              <div className="space-y-2">
+                {tasks.map((task, index) => (
+                  <div key={index} className="bg-white/10 p-4 rounded-xl flex justify-between items-center">
+                    <div>
+                      <div className="font-semibold text-lg">{task.name}</div>
+                      <div className="text-sm text-slate-400">
+                        {task.assignedTo} • {task.points} pts • {task.period || task.time || 'Morning'} • {task.recurrence.join(', ')}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => editTask(index)}
+                        className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition text-sm"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => deleteTask(index)}
+                        className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg transition text-sm"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Add/Edit Task Form */}
+            <div className="border-t border-white/10 pt-6">
+              <h4 className="text-lg font-semibold mb-4">
+                {editingTask !== null ? 'Edit Task' : 'Add New Task'}
+              </h4>
+
               <input
                 type="text"
-                placeholder="9:00 AM"
-                value={newTask.time}
-                onChange={(e) => setNewTask({...newTask, time: e.target.value})}
-                className="w-full bg-white/10 p-3 rounded-lg text-white placeholder-slate-400"
+                placeholder="Task name"
+                value={newTask.name}
+                onChange={(e) => setNewTask({...newTask, name: e.target.value})}
+                className="w-full bg-white/10 p-3 rounded-lg mb-4 text-white placeholder-slate-400"
               />
-            </div>
 
-            <button
-              onClick={addTask}
-              className="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition"
-            >
-              Add Task
-            </button>
+              <div className="mb-4">
+                <label className="text-sm text-slate-400 mb-2 block">Points:</label>
+                <input
+                  type="number"
+                  value={newTask.points}
+                  onChange={(e) => setNewTask({...newTask, points: parseInt(e.target.value) || 0})}
+                  className="w-full bg-white/10 p-3 rounded-lg text-white"
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="text-sm text-slate-400 mb-2 block">Assign to:</label>
+                <div className="flex flex-wrap gap-2">
+                  {users.map(user => (
+                    <button
+                      key={user.name}
+                      onClick={() => setNewTask({...newTask, assignedTo: user.name})}
+                      className={`px-4 py-2 rounded-lg font-medium transition ${
+                        newTask.assignedTo === user.name
+                          ? 'bg-teal-600'
+                          : 'bg-white/10 hover:bg-white/20'
+                      }`}
+                    >
+                      {user.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="text-sm text-slate-400 mb-2 block">Repeat on:</label>
+                <div className="flex flex-wrap gap-2">
+                  {DAYS.map(day => (
+                    <button
+                      key={day}
+                      onClick={() => toggleDay(day)}
+                      className={`px-3 py-2 rounded-lg font-medium transition ${
+                        newTask.recurrence.includes(day)
+                          ? 'bg-teal-600'
+                          : 'bg-white/10 hover:bg-white/20'
+                      }`}
+                    >
+                      {day}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <label className="text-sm text-slate-400 mb-2 block">Time Period:</label>
+                <div className="flex gap-2">
+                  {['Morning', 'Evening', 'Night'].map(period => (
+                    <button
+                      key={period}
+                      onClick={() => setNewTask({...newTask, period})}
+                      className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
+                        newTask.period === period
+                          ? 'bg-teal-600'
+                          : 'bg-white/10 hover:bg-white/20'
+                      }`}
+                    >
+                      {period}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={editingTask !== null ? saveEditedTask : addTask}
+                className="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition"
+              >
+                {editingTask !== null ? 'Save Changes' : 'Add Task'}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Add Reward Modal */}
+      {/* Reward Management Modal */}
       {showRewardModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-          <div className="bg-slate-900 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+          <div className="bg-slate-900 rounded-2xl p-8 max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-bold">Add Reward</h3>
-              <button onClick={() => setShowRewardModal(false)}>
+              <h3 className="text-2xl font-bold">Manage Rewards</h3>
+              <button onClick={closeRewardModal}>
                 <X size={24} className="text-slate-400 hover:text-white" />
               </button>
             </div>
 
-            <input
-              type="text"
-              placeholder="Reward name"
-              value={newReward.name}
-              onChange={(e) => setNewReward({...newReward, name: e.target.value})}
-              className="w-full bg-white/10 p-3 rounded-lg mb-4 text-white placeholder-slate-400"
-            />
-
+            {/* Existing Rewards List */}
             <div className="mb-6">
-              <label className="text-sm text-slate-400 mb-2 block">Cost (points):</label>
-              <input
-                type="number"
-                value={newReward.cost}
-                onChange={(e) => setNewReward({...newReward, cost: parseInt(e.target.value) || 0})}
-                className="w-full bg-white/10 p-3 rounded-lg text-white"
-              />
+              <h4 className="text-lg font-semibold mb-3">Current Rewards</h4>
+              <div className="space-y-2">
+                {rewards.map((reward, index) => (
+                  <div key={index} className="bg-white/10 p-4 rounded-xl flex justify-between items-center">
+                    <div>
+                      <div className="font-semibold text-lg">{reward.name}</div>
+                      <div className="text-sm text-yellow-400">{reward.cost} points</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => editReward(index)}
+                        className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition text-sm"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => deleteReward(index)}
+                        className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg transition text-sm"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <button
-              onClick={addReward}
-              className="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition"
-            >
-              Add Reward
-            </button>
+            {/* Add/Edit Reward Form */}
+            <div className="border-t border-white/10 pt-6">
+              <h4 className="text-lg font-semibold mb-4">
+                {editingReward !== null ? 'Edit Reward' : 'Add New Reward'}
+              </h4>
+
+              <input
+                type="text"
+                placeholder="Reward name"
+                value={newReward.name}
+                onChange={(e) => setNewReward({...newReward, name: e.target.value})}
+                className="w-full bg-white/10 p-3 rounded-lg mb-4 text-white placeholder-slate-400"
+              />
+
+              <div className="mb-6">
+                <label className="text-sm text-slate-400 mb-2 block">Cost (points):</label>
+                <input
+                  type="number"
+                  value={newReward.cost}
+                  onChange={(e) => setNewReward({...newReward, cost: parseInt(e.target.value) || 0})}
+                  className="w-full bg-white/10 p-3 rounded-lg text-white"
+                />
+              </div>
+
+              <button
+                onClick={editingReward !== null ? saveEditedReward : addReward}
+                className="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition"
+              >
+                {editingReward !== null ? 'Save Changes' : 'Add Reward'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -861,6 +1146,24 @@ const FamilyDashboard = () => {
                 />
               </div>
 
+              {newUser.type === 'Parent' && (
+                <div className="mb-6">
+                  <label className="text-sm text-slate-400 mb-2 block">4-Digit PIN:</label>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    placeholder="Enter 4-digit PIN"
+                    value={newUser.pin}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, '');
+                      setNewUser({...newUser, pin: value});
+                    }}
+                    className="w-full bg-white/10 p-3 rounded-lg text-white placeholder-slate-400"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Required for approving child reward redemptions</p>
+                </div>
+              )}
+
               <button
                 onClick={editingUser !== null ? saveEditedUser : addUser}
                 className="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition"
@@ -869,6 +1172,103 @@ const FamilyDashboard = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* PIN Verification Modal */}
+      {showPinModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+          <div className="bg-slate-900 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold">Parent PIN Required</h3>
+              <button onClick={closePinModal}>
+                <X size={24} className="text-slate-400 hover:text-white" />
+              </button>
+            </div>
+
+            <p className="text-slate-300 mb-6">
+              {pendingReward && `To redeem "${pendingReward.reward.name}", please ask a parent to enter their PIN.`}
+            </p>
+
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="Enter 4-digit PIN"
+              value={pinInput}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '');
+                setPinInput(value);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && pinInput.length === 4) {
+                  handlePinSubmit();
+                }
+              }}
+              className="w-full bg-white/10 p-4 rounded-lg text-white text-center text-2xl tracking-widest placeholder-slate-400 mb-6"
+              autoFocus
+            />
+
+            <div className="flex gap-3">
+              <button
+                onClick={closePinModal}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 py-3 rounded-lg font-bold transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePinSubmit}
+                disabled={pinInput.length !== 4}
+                className="flex-1 bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Verify
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confetti Animation */}
+      {showConfetti && (
+        <div className="fixed inset-0 pointer-events-none z-[100] overflow-hidden">
+          {[...Array(150)].map((_, i) => {
+            const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f7b731', '#5f27cd', '#00d2d3', '#ff9ff3', '#54a0ff', '#48dbfb', '#1dd1a1'];
+            const left = Math.random() * 100;
+            const animationDelay = Math.random() * 0.5;
+            const animationDuration = 3 + Math.random() * 2;
+            const size = 8 + Math.random() * 8;
+            const rotation = Math.random() * 360;
+
+            return (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  left: `${left}%`,
+                  top: '-10%',
+                  width: `${size}px`,
+                  height: `${size}px`,
+                  backgroundColor: colors[Math.floor(Math.random() * colors.length)],
+                  animation: `confettiFall ${animationDuration}s linear ${animationDelay}s forwards`,
+                  transform: `rotate(${rotation}deg)`,
+                  borderRadius: Math.random() > 0.5 ? '50%' : '0',
+                  opacity: 0.9,
+                }}
+              />
+            );
+          })}
+          <style>{`
+            @keyframes confettiFall {
+              0% {
+                transform: translateY(0) rotate(0deg);
+                opacity: 1;
+              }
+              100% {
+                transform: translateY(100vh) rotate(720deg);
+                opacity: 0;
+              }
+            }
+          `}</style>
         </div>
       )}
     </div>

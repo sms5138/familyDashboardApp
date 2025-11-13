@@ -3,17 +3,20 @@
     {
       "name": "Nolan",
       "type": "Child",
-      "points": 84
+      "points": 55,
+      "pin": ""
     },
     {
       "name": "Mom",
       "type": "Parent",
-      "points": 0
+      "points": 0,
+      "pin": "4567"
     },
     {
       "name": "Dad",
       "type": "Parent",
-      "points": 0
+      "points": 0,
+      "pin": "1234"
     }
   ]
 }

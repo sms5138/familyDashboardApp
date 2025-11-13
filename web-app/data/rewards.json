@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1,
+    "name": "Ice Cream",
+    "cost": 5
+  },
+  {
+    "id": 2,
+    "name": "Movie Night",
+    "cost": 10
+  },
+  {
+    "name": "Hockey Stick",
+    "cost": 150,
+    "id": 1763005429974
+  },
+  {
+    "name": "1000 Robux",
+    "cost": 450,
+    "id": 1763005625524
+  }
+]

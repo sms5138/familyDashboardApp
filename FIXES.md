@@ -62,7 +62,7 @@ tail -f logs/web-app.log
 
 - **Users**: `web-app/data/users.json` (managed by storage server)
 - **Tasks**: `web-app/data/tasks.json` (managed by storage server)
-- **Rewards**: `storage-server/data/rewards.json`
+- **Rewards**: `web-app/data/rewards.json` (managed by storage server)
 - **User Points**: `storage-server/data/userPoints.json`
 - **API Keys**: `storage-server/data/apiKeys.json`
 
@@ -87,6 +87,16 @@ tail -f logs/web-app.log
 - Modified `toggleTask()` to save tasks after completion status changes
 - All task changes now automatically save to `web-app/data/tasks.json`
 
+## Issue 6: Rewards Not Persisting
+**Problem**: Rewards added in the UI were only stored in memory and lost on page refresh.
+
+**Solution**: Updated [web-app/App.js](web-app/App.js) and [storage-server/server.js](storage-server/server.js)
+- Modified storage server to route rewards to `web-app/data/rewards.json` (same pattern as users and tasks)
+- Added `loadRewards()` function to fetch rewards from API on app mount
+- Added `saveRewards()` helper function to persist rewards to API
+- Modified `addReward()` to save rewards after adding new reward
+- All reward changes now automatically save to `web-app/data/rewards.json`
+
 ## What Should Happen Now
 
 1. Run `dashboard` to start both servers
@@ -97,8 +107,8 @@ tail -f logs/web-app.log
    - Add new tasks - saves immediately to `web-app/data/tasks.json`
    - Click on tasks to complete them - saves immediately to `web-app/data/tasks.json`
    - User points update immediately and save to `web-app/data/users.json`
-5. **Reward Redemption**: Click user buttons in rewards section
-   - Points deduct immediately
-   - Changes automatically save to `web-app/data/users.json`
-6. Check `logs/storage-server.log` to see "✅ Saved users/tasks to [path]" confirmations
+5. **Reward Management**:
+   - Add new rewards - saves immediately to `web-app/data/rewards.json`
+   - Redeem rewards - points deduct and save to `web-app/data/users.json`
+6. Check `logs/storage-server.log` to see "✅ Saved users/tasks/rewards to [path]" confirmations
 7. Any errors will be visible in the terminal AND saved to log files
