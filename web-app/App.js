@@ -88,12 +88,16 @@ const FamilyDashboard = () => {
   // Experience/UX settings state
   const [experienceSettings, setExperienceSettings] = useState({
     modules: {
-      calendar: { displayLimit: 5 },
+      calendar: {
+        displayLimit: 5,
+        calendarColors: {}
+      },
       tasks: { displayLimit: 5 },
       rewards: { displayLimit: 4 },
       users: { displayLimit: 5 }
     }
   });
+  const [experienceSettingsLoaded, setExperienceSettingsLoaded] = useState(false);
 
   // Weather state
   const [weather, setWeather] = useState({
@@ -344,9 +348,11 @@ const FamilyDashboard = () => {
       if (result.success && result.data) {
         setExperienceSettings(result.data);
       }
+      setExperienceSettingsLoaded(true);
     } catch (error) {
       console.error('Error loading experience settings:', error);
       // Falls back to default values
+      setExperienceSettingsLoaded(true);
     }
   };
 
@@ -886,14 +892,14 @@ const FamilyDashboard = () => {
 
   // Load calendar events when access token, API config, or experience settings change
   useEffect(() => {
-    if (accessToken) {
+    if (accessToken && experienceSettingsLoaded) {
       loadCalendarEvents();
     } else {
       setCalendarLoading(false);
       setCalendarError(null);
       setCalendarEvents([]);
     }
-  }, [accessToken, calendarIds, googleApiKey, experienceSettings]);
+  }, [accessToken, calendarIds, googleApiKey, experienceSettings, experienceSettingsLoaded]);
 
   const handleSignoutClick = () => {
     setAccessToken(null);
@@ -3153,7 +3159,7 @@ const FamilyDashboard = () => {
               <img
                 src={img}
                 alt={`Screensaver ${index + 1}`}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain bg-black"
               />
             </div>
           ))}
