@@ -4,26 +4,26 @@
     "name": "Make Bed",
     "points": 1,
     "assignedTo": "Nolan",
-    "completed": true,
+    "completed": false,
     "recurrence": [
       "Mon",
       "Tue",
       "Wed",
-      "Thu",
-      "Fri"
+      "Fri",
+      "Thu"
     ],
     "period": "Morning"
   },
   {
-    "name": "Brush Teeth",
+    "name": "Brush Teeth in the Morning",
     "points": 1,
     "assignedTo": "Nolan",
     "recurrence": [
       "Mon",
       "Tue",
       "Wed",
-      "Thu",
-      "Fri"
+      "Fri",
+      "Thu"
     ],
     "period": "Morning",
     "id": 1763004997808,
@@ -38,6 +38,102 @@
     ],
     "period": "Morning",
     "id": 1763006725655,
+    "completed": false
+  },
+  {
+    "name": "Work On Math Skills for 15 Minutes",
+    "points": 4,
+    "assignedTo": "Nolan",
+    "recurrence": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
+    "period": "Afternoon",
+    "id": 1763041957449,
+    "completed": false
+  },
+  {
+    "name": "Read to Mom and Dad for 15 Minutes",
+    "points": 4,
+    "assignedTo": "Nolan",
+    "recurrence": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
+    "period": "Afternoon",
+    "id": 1763042001399,
+    "completed": false
+  },
+  {
+    "name": "Brush Teeth before bed",
+    "points": 1,
+    "assignedTo": "Nolan",
+    "recurrence": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
+    "period": "Evening",
+    "id": 1763042040598,
+    "completed": false
+  },
+  {
+    "name": "Feed and Water Biscuit in the Morning",
+    "points": 1,
+    "assignedTo": "Nolan",
+    "recurrence": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
+    "period": "Morning",
+    "id": 1763042072963,
+    "completed": false
+  },
+  {
+    "name": "Feed and Water Biscuit in the Evening",
+    "points": 1,
+    "assignedTo": "Nolan",
+    "recurrence": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
+    "period": "Evening",
+    "id": 1763042125748,
+    "completed": false
+  },
+  {
+    "name": "Do Something Cool Today",
+    "points": 1,
+    "assignedTo": "Nolan",
+    "recurrence": [
+      "Fri"
+    ],
+    "period": "Morning",
+    "id": 1763044971366,
     "completed": false
   }
 ]

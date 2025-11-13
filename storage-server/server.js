@@ -9,9 +9,11 @@ const PORT = 3001;
 // Use web-app/data directory for users.json, storage-server/data for other data
 const DATA_DIR = path.join(__dirname, 'data');
 const WEB_APP_DATA_DIR = path.join(__dirname, '..', 'web-app', 'data');
+const PHOTOS_DIR = path.join(WEB_APP_DATA_DIR, 'photos');
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+app.use('/photos', express.static(PHOTOS_DIR));
 
 async function ensureDataDir() {
   try {
@@ -27,6 +29,14 @@ async function ensureDataDir() {
   } catch {
     await fs.mkdir(WEB_APP_DATA_DIR, { recursive: true });
     console.log('Created web-app data directory:', WEB_APP_DATA_DIR);
+  }
+
+  // Ensure photos directory exists
+  try {
+    await fs.access(PHOTOS_DIR);
+  } catch {
+    await fs.mkdir(PHOTOS_DIR, { recursive: true });
+    console.log('Created photos directory:', PHOTOS_DIR);
   }
 }
 
@@ -123,6 +133,120 @@ app.get('/api/data', async (req, res) => {
   }
 });
 
+// Photos endpoints - MUST be before the generic /api/:type route
+// Get list of photos
+app.get('/api/photos', async (req, res) => {
+  try {
+    const files = await fs.readdir(PHOTOS_DIR);
+    const photos = files
+      .filter(file => /\.(jpg|jpeg|png|gif|webp)$/i.test(file))
+      .map(file => `/photos/${file}`);
+    res.json({ success: true, data: photos });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Upload photo
+app.post('/api/photos', async (req, res) => {
+  try {
+    const { filename, data } = req.body;
+
+    if (!filename || !data) {
+      return res.status(400).json({ success: false, error: 'Filename and data required' });
+    }
+
+    // Extract base64 data
+    const base64Data = data.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    const filePath = path.join(PHOTOS_DIR, filename);
+    await fs.writeFile(filePath, buffer);
+
+    res.json({ success: true, url: `/photos/${filename}` });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete photo
+app.delete('/api/photos/:filename', async (req, res) => {
+  try {
+    const { filename} = req.params;
+    const filePath = path.join(PHOTOS_DIR, filename);
+
+    await fs.unlink(filePath);
+    res.json({ success: true, message: 'Photo deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Theme endpoints - MUST be before the generic /api/:type route
+// Get theme settings
+app.get('/api/theme', async (req, res) => {
+  try {
+    const filePath = path.join(WEB_APP_DATA_DIR, 'theme.json');
+    const data = await fs.readFile(filePath, 'utf8');
+    res.json({ success: true, data: JSON.parse(data) });
+  } catch (error) {
+    // Return default theme if file doesn't exist
+    res.json({
+      success: true,
+      data: {
+        themeMode: 'auto',
+        accentColor: 'blue',
+        colorCycleEnabled: false,
+        colorCycleIntervalMinutes: 60,
+        lastColorChangeDate: null,
+        lastColorChangeHour: null
+      }
+    });
+  }
+});
+
+// Update theme settings
+app.post('/api/theme', async (req, res) => {
+  try {
+    const filePath = path.join(WEB_APP_DATA_DIR, 'theme.json');
+    await fs.writeFile(filePath, JSON.stringify(req.body, null, 2));
+    res.json({ success: true, data: req.body });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Screensaver endpoints - MUST be before the generic /api/:type route
+// Get screensaver settings
+app.get('/api/screensaver', async (req, res) => {
+  try {
+    const filePath = path.join(WEB_APP_DATA_DIR, 'screensaver.json');
+    const data = await fs.readFile(filePath, 'utf8');
+    res.json({ success: true, data: JSON.parse(data) });
+  } catch (error) {
+    // Return default screensaver settings if file doesn't exist
+    res.json({
+      success: true,
+      data: {
+        enabled: false,
+        delayMinutes: 5,
+        imageIntervalMinutes: 1
+      }
+    });
+  }
+});
+
+// Update screensaver settings
+app.post('/api/screensaver', async (req, res) => {
+  try {
+    const filePath = path.join(WEB_APP_DATA_DIR, 'screensaver.json');
+    await fs.writeFile(filePath, JSON.stringify(req.body, null, 2));
+    res.json({ success: true, data: req.body });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/api/:type', async (req, res) => {
   try {
     const { type } = req.params;
@@ -163,7 +287,7 @@ app.post('/api/backup', async (req, res) => {
   try {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupDir = path.join(DATA_DIR, 'backups');
-    
+
     await fs.mkdir(backupDir, { recursive: true });
 
     const tasks = await readDataFile('tasks');
@@ -172,7 +296,7 @@ app.post('/api/backup', async (req, res) => {
 
     const backup = { tasks, rewards, userPoints, timestamp };
     const backupPath = path.join(backupDir, `backup-${timestamp}.json`);
-    
+
     await fs.writeFile(backupPath, JSON.stringify(backup, null, 2));
 
     res.json({ success: true, message: 'Backup created', filename: `backup-${timestamp}.json` });

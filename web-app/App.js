@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Plus, X, Calendar, Sun, Award, CheckCircle, Circle, Users } from 'lucide-react';
-import { gapi } from 'gapi-script';
+import { Bell, Plus, X, Calendar, Sun, Award, CheckCircle, Circle, Users, Settings, Power } from 'lucide-react';
+import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import './global.css';
 
 // Google Calendar API Configuration
-const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_API_KEY || 'YOUR_API_KEY';
-const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || 'YOUR_CLIENT_ID';
+const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_API_KEY || 'AIzaSyDlyIl0Z3YoH89NL5aa2OZVY2xysjYO0o8';
+const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '959515304842-8i8ljtopi6d2gvtp6vpvg1c6u8l1ohp2.apps.googleusercontent.com';
 const CALENDAR_IDS = (process.env.REACT_APP_CALENDAR_IDS || 'primary').split(',');
 const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 
@@ -27,6 +27,7 @@ const FamilyDashboard = () => {
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [calendarError, setCalendarError] = useState(null);
   const [isSignedIn, setIsSignedIn] = useState(false);
+  const [accessToken, setAccessToken] = useState(null);
 
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showRewardModal, setShowRewardModal] = useState(false);
@@ -35,11 +36,30 @@ const FamilyDashboard = () => {
   const [pinInput, setPinInput] = useState('');
   const [pendingReward, setPendingReward] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showPinVerifyModal, setShowPinVerifyModal] = useState(false);
+  const [pinVerifyInput, setPinVerifyInput] = useState('');
+  const [pendingUserEdit, setPendingUserEdit] = useState(null);
   const [editingUser, setEditingUser] = useState(null);
   const [editingReward, setEditingReward] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
   const [hideParents, setHideParents] = useState(true);
+  const [selectedPeriods, setSelectedPeriods] = useState(['Morning', 'Afternoon', 'Evening']);
   const [newUser, setNewUser] = useState({ name: '', type: 'Child', points: 0, pin: '' });
+
+  // Settings state
+  const [showSettings, setShowSettings] = useState(false);
+  const [themeMode, setThemeMode] = useState('dark');
+  const [accentColor, setAccentColor] = useState('teal');
+  const [colorCycleEnabled, setColorCycleEnabled] = useState(false);
+  const [colorCycleIntervalMinutes, setColorCycleIntervalMinutes] = useState(60);
+  const [screensaverEnabled, setScreensaverEnabled] = useState(false);
+  const [screensaverTimeout, setScreensaverTimeout] = useState(5);
+  const [screensaverDuration, setScreensaverDuration] = useState(10);
+  const [screensaverActive, setScreensaverActive] = useState(false);
+  const [screensaverImages, setScreensaverImages] = useState([]);
+  const [showScreensaverPreview, setShowScreensaverPreview] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [lastActivityTime, setLastActivityTime] = useState(Date.now());
   const [newTask, setNewTask] = useState({
     name: '',
     points: 1,
@@ -54,12 +74,162 @@ const FamilyDashboard = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Load users, tasks, and rewards from API
+  // Load users, tasks, rewards, and settings from API
   useEffect(() => {
     loadUsers();
     loadTasks();
     loadRewards();
+    loadPhotos();
+    loadThemeSettings();
+    loadScreensaverSettings();
   }, []);
+
+  // Auto theme mode based on time of day
+  useEffect(() => {
+    if (themeMode === 'auto') {
+      const checkTime = () => {
+        const hour = new Date().getHours();
+        // Light mode between 6 AM and 6 PM
+        const shouldBeLightMode = hour >= 6 && hour < 18;
+        setThemeMode(shouldBeLightMode ? 'light' : 'dark');
+      };
+
+      checkTime();
+      const interval = setInterval(checkTime, 60000); // Check every minute
+      return () => clearInterval(interval);
+    }
+  }, [themeMode]);
+
+  // Color Cycle - change color based on interval
+  useEffect(() => {
+    if (colorCycleEnabled) {
+      const colors = Object.keys(accentColors);
+      const usedColorsToday = JSON.parse(localStorage.getItem('usedColorsToday') || '[]');
+      const lastColorChange = parseInt(localStorage.getItem('lastColorChange') || '0');
+
+      const checkColorChange = () => {
+        const now = Date.now();
+        const intervalMs = colorCycleIntervalMinutes * 60 * 1000; // Convert minutes to milliseconds
+
+        // Check if we need to reset daily used colors
+        const lastResetDate = localStorage.getItem('colorResetDate');
+        const today = new Date().toDateString();
+        if (lastResetDate !== today) {
+          localStorage.setItem('usedColorsToday', JSON.stringify([]));
+          localStorage.setItem('colorResetDate', today);
+        }
+
+        // Change color if the interval has passed
+        if (now - lastColorChange >= intervalMs) {
+          const currentUsedColors = JSON.parse(localStorage.getItem('usedColorsToday') || '[]');
+          const availableColors = colors.filter(c => !currentUsedColors.includes(c));
+
+          // If all colors used, reset
+          const nextColors = availableColors.length > 0 ? availableColors : colors;
+          const nextColor = nextColors[Math.floor(Math.random() * nextColors.length)];
+
+          setAccentColor(nextColor);
+          localStorage.setItem('accentColor', nextColor);
+          localStorage.setItem('lastColorChange', now.toString());
+
+          const updatedUsedColors = [...currentUsedColors, nextColor];
+          localStorage.setItem('usedColorsToday', JSON.stringify(updatedUsedColors));
+
+          // Save to API
+          saveThemeSettings({
+            themeMode,
+            accentColor: nextColor,
+            colorCycleEnabled: true,
+            colorCycleIntervalMinutes,
+            lastColorChangeDate: now.toString(),
+            lastColorChangeHour: new Date().getHours()
+          });
+        }
+      };
+
+      checkColorChange();
+      const interval = setInterval(checkColorChange, 60000); // Check every minute
+      return () => clearInterval(interval);
+    }
+  }, [colorCycleEnabled, colorCycleIntervalMinutes]);
+
+  // Screensaver functionality
+  useEffect(() => {
+    if (!screensaverEnabled) return;
+
+    const checkInactivity = () => {
+      const now = Date.now();
+      const inactiveTime = now - lastActivityTime;
+      const timeoutMs = screensaverTimeout * 60 * 1000;
+
+      if (inactiveTime >= timeoutMs && !screensaverActive) {
+        setScreensaverActive(true);
+      }
+    };
+
+    const resetActivity = () => {
+      setLastActivityTime(Date.now());
+      if (screensaverActive) {
+        setScreensaverActive(false);
+      }
+    };
+
+    // Check for inactivity every 10 seconds
+    const interval = setInterval(checkInactivity, 10000);
+
+    // Listen for user activity
+    window.addEventListener('mousemove', resetActivity);
+    window.addEventListener('keydown', resetActivity);
+    window.addEventListener('click', resetActivity);
+    window.addEventListener('touchstart', resetActivity);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('mousemove', resetActivity);
+      window.removeEventListener('keydown', resetActivity);
+      window.removeEventListener('click', resetActivity);
+      window.removeEventListener('touchstart', resetActivity);
+    };
+  }, [screensaverEnabled, screensaverTimeout, lastActivityTime, screensaverActive]);
+
+  // Screensaver image rotation
+  useEffect(() => {
+    if (screensaverActive && screensaverImages.length > 0) {
+      const interval = setInterval(() => {
+        setCurrentImageIndex((prev) => (prev + 1) % screensaverImages.length);
+      }, screensaverDuration * 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [screensaverActive, screensaverImages, screensaverDuration]);
+
+  // Google OAuth login configuration
+  const handleGoogleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      console.log('=== LOGIN SUCCESSFUL ===');
+      console.log('Token Response:', tokenResponse);
+      console.log('Access Token:', tokenResponse.access_token);
+      console.log('Token Type:', tokenResponse.token_type);
+      console.log('Expires In:', tokenResponse.expires_in);
+      setAccessToken(tokenResponse.access_token);
+      setIsSignedIn(true);
+      localStorage.setItem('google_access_token', tokenResponse.access_token);
+      console.log('Token stored in localStorage');
+    },
+    onError: (error) => {
+      console.error('=== LOGIN FAILED ===');
+      console.error('Error object:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error keys:', Object.keys(error || {}));
+      setCalendarError('Failed to sign in to Google Calendar');
+    },
+    scope: SCOPES,
+    flow: 'implicit',
+    onNonOAuthError: (error) => {
+      console.error('=== NON-OAUTH ERROR ===');
+      console.error('Error:', error);
+    }
+  });
 
   const loadUsers = async () => {
     try {
@@ -95,7 +265,28 @@ const FamilyDashboard = () => {
       const response = await fetch(`${API_URL}/api/tasks`);
       const result = await response.json();
       if (result.success && result.data) {
-        setTasks(result.data);
+        const loadedTasks = result.data;
+
+        // Check if we need to reset tasks for a new day
+        const today = new Date().toDateString();
+        const lastReset = localStorage.getItem('lastTaskReset');
+
+        if (lastReset !== today) {
+          // Reset all tasks to incomplete for the new day
+          const resetTasks = loadedTasks.map(task => ({
+            ...task,
+            completed: false
+          }));
+
+          // Save the reset tasks
+          await saveTasks(resetTasks);
+          setTasks(resetTasks);
+
+          // Update last reset date
+          localStorage.setItem('lastTaskReset', today);
+        } else {
+          setTasks(loadedTasks);
+        }
       }
     } catch (error) {
       console.error('Error loading tasks:', error);
@@ -113,6 +304,130 @@ const FamilyDashboard = () => {
     } catch (error) {
       console.error('Error loading rewards:', error);
       // Keep default rewards if API fails
+    }
+  };
+
+  const loadPhotos = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/photos`);
+      const result = await response.json();
+      if (result.success && result.data) {
+        const photoUrls = result.data.map(photo => `${API_URL}${photo}`);
+        setScreensaverImages(photoUrls);
+      }
+    } catch (error) {
+      console.error('Error loading photos:', error);
+    }
+  };
+
+  const handlePhotoUpload = async (files) => {
+    for (const file of files) {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const response = await fetch(`${API_URL}/api/photos`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              filename: `${Date.now()}-${file.name}`,
+              data: e.target.result
+            })
+          });
+
+          const result = await response.json();
+          if (result.success) {
+            // Reload photos
+            await loadPhotos();
+          }
+        } catch (error) {
+          console.error('Error uploading photo:', error);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const deletePhoto = async (photoUrl) => {
+    try {
+      const filename = photoUrl.split('/').pop();
+      const response = await fetch(`${API_URL}/api/photos/${filename}`, {
+        method: 'DELETE'
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        await loadPhotos();
+      }
+    } catch (error) {
+      console.error('Error deleting photo:', error);
+    }
+  };
+
+  // Theme settings functions
+  const loadThemeSettings = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/theme`);
+      const result = await response.json();
+      if (result.success && result.data) {
+        setThemeMode(result.data.themeMode || 'dark');
+        setAccentColor(result.data.accentColor || 'teal');
+        setColorCycleEnabled(result.data.colorCycleEnabled || false);
+        setColorCycleIntervalMinutes(result.data.colorCycleIntervalMinutes || 60);
+        // Store in state for color cycling logic
+        if (result.data.lastColorChangeDate) {
+          localStorage.setItem('lastColorChangeDate', result.data.lastColorChangeDate);
+        }
+        if (result.data.lastColorChangeHour !== null) {
+          localStorage.setItem('lastColorChangeHour', result.data.lastColorChangeHour.toString());
+        }
+      }
+    } catch (error) {
+      console.error('Error loading theme settings:', error);
+    }
+  };
+
+  const saveThemeSettings = async (settings) => {
+    try {
+      await fetch(`${API_URL}/api/theme`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(settings),
+      });
+    } catch (error) {
+      console.error('Error saving theme settings:', error);
+    }
+  };
+
+  // Screensaver settings functions
+  const loadScreensaverSettings = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/screensaver`);
+      const result = await response.json();
+      if (result.success && result.data) {
+        setScreensaverEnabled(result.data.enabled || false);
+        setScreensaverTimeout(result.data.delayMinutes || 5);
+        setScreensaverDuration(result.data.imageIntervalMinutes || 10);
+      }
+    } catch (error) {
+      console.error('Error loading screensaver settings:', error);
+    }
+  };
+
+  const saveScreensaverSettings = async (settings) => {
+    try {
+      await fetch(`${API_URL}/api/screensaver`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(settings),
+      });
+    } catch (error) {
+      console.error('Error saving screensaver settings:', error);
     }
   };
 
@@ -184,59 +499,41 @@ const FamilyDashboard = () => {
     await saveUsers(updatedUsers);
   };
 
-  // Initialize Google API client
+  // Check for stored access token on mount
   useEffect(() => {
-    const initClient = () => {
-      gapi.load('client:auth2', () => {
-        gapi.client.init({
-          apiKey: GOOGLE_API_KEY,
-          clientId: GOOGLE_CLIENT_ID,
-          discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'],
-          scope: SCOPES,
-        }).then(() => {
-          // Listen for sign-in state changes
-          const authInstance = gapi.auth2.getAuthInstance();
-          authInstance.isSignedIn.listen(updateSigninStatus);
-
-          // Handle initial sign-in state
-          updateSigninStatus(authInstance.isSignedIn.get());
-        }).catch((error) => {
-          console.error('Error initializing Google API client:', error);
-          setCalendarError('Failed to initialize Google Calendar. Please check your API credentials.');
-          setCalendarLoading(false);
-        });
-      });
-    };
-
-    initClient();
+    const storedToken = localStorage.getItem('google_access_token');
+    if (storedToken) {
+      setAccessToken(storedToken);
+      setIsSignedIn(true);
+    } else {
+      setCalendarLoading(false);
+    }
   }, []);
 
-  const updateSigninStatus = (isSignedIn) => {
-    setIsSignedIn(isSignedIn);
-    if (isSignedIn) {
+  // Load calendar events when access token changes
+  useEffect(() => {
+    if (accessToken) {
       loadCalendarEvents();
     } else {
       setCalendarLoading(false);
       setCalendarError(null);
       setCalendarEvents([]);
     }
-  };
-
-  const handleAuthClick = () => {
-    const authInstance = gapi.auth2.getAuthInstance();
-    authInstance.signIn().catch((error) => {
-      console.error('Error signing in:', error);
-      setCalendarError('Failed to sign in to Google Calendar');
-    });
-  };
+  }, [accessToken]);
 
   const handleSignoutClick = () => {
-    const authInstance = gapi.auth2.getAuthInstance();
-    authInstance.signOut();
+    setAccessToken(null);
+    setIsSignedIn(false);
+    localStorage.removeItem('google_access_token');
+    setCalendarEvents([]);
   };
 
   const loadCalendarEvents = async () => {
     try {
+      console.log('=== LOADING CALENDAR EVENTS ===');
+      console.log('Access Token:', accessToken ? '✓ Present' : '✗ Missing');
+      console.log('Calendar IDs:', CALENDAR_IDS);
+
       setCalendarLoading(true);
       setCalendarError(null);
 
@@ -245,21 +542,40 @@ const FamilyDashboard = () => {
       const endDate = new Date();
       endDate.setDate(endDate.getDate() + 7);
 
+      console.log('Date range:', now.toISOString(), 'to', endDate.toISOString());
+
       let allEvents = [];
 
-      // Fetch events from each calendar ID
+      // Fetch events from each calendar ID using REST API
       for (const calendarId of CALENDAR_IDS) {
         try {
-          const response = await gapi.client.calendar.events.list({
-            calendarId: calendarId.trim(),
-            timeMin: now.toISOString(),
-            timeMax: endDate.toISOString(),
-            showDeleted: false,
-            singleEvents: true,
-            orderBy: 'startTime',
+          console.log(`Fetching events for calendar: ${calendarId}`);
+
+          const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId.trim())}/events?` +
+            `timeMin=${encodeURIComponent(now.toISOString())}&` +
+            `timeMax=${encodeURIComponent(endDate.toISOString())}&` +
+            `showDeleted=false&singleEvents=true&orderBy=startTime&key=${GOOGLE_API_KEY}`;
+
+          console.log('Calendar API URL:', url.substring(0, 100) + '...');
+
+          const response = await fetch(url, {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+            },
           });
 
-          const events = response.result.items || [];
+          console.log(`Response status: ${response.status}`);
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error(`Calendar API Error:`, errorData);
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const data = await response.json();
+          const events = data.items || [];
+          console.log(`Found ${events.length} events for ${calendarId}`);
+
           allEvents = allEvents.concat(events.map(event => ({
             ...event,
             calendarId: calendarId.trim()
@@ -326,6 +642,38 @@ const FamilyDashboard = () => {
       setCalendarError('Failed to load calendar events');
       setCalendarLoading(false);
     }
+  };
+
+  // Helper function to get current day abbreviation
+  const getCurrentDay = () => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[new Date().getDay()];
+  };
+
+  // Helper function to check if a task should be shown today
+  const isTaskForToday = (task) => {
+    const today = getCurrentDay();
+
+    // Check if task has Weekend and today is Sat or Sun
+    if (task.recurrence.includes('Weekend') && (today === 'Sat' || today === 'Sun')) {
+      return true;
+    }
+
+    // Check if today is in the recurrence array
+    return task.recurrence.includes(today);
+  };
+
+  // Helper function to toggle period filter
+  const togglePeriod = (period) => {
+    setSelectedPeriods(prev => {
+      if (prev.includes(period)) {
+        // Remove period if already selected
+        return prev.filter(p => p !== period);
+      } else {
+        // Add period if not selected
+        return [...prev, period];
+      }
+    });
   };
 
   const addTask = async () => {
@@ -450,9 +798,18 @@ const FamilyDashboard = () => {
   };
 
   const editUser = (index) => {
-    setEditingUser(index);
-    setNewUser(users[index]);
-    setShowUserModal(true);
+    const userToEdit = users[index];
+
+    // If user is a parent with a PIN, require verification
+    if (userToEdit.type === 'Parent' && userToEdit.pin) {
+      setPendingUserEdit(index);
+      setShowPinVerifyModal(true);
+    } else {
+      // No PIN protection needed for children or parents without PIN
+      setEditingUser(index);
+      setNewUser(userToEdit);
+      setShowUserModal(true);
+    }
   };
 
   const saveEditedUser = async () => {
@@ -554,6 +911,35 @@ const FamilyDashboard = () => {
     setPendingReward(null);
   };
 
+  const handlePinVerification = () => {
+    if (pendingUserEdit !== null) {
+      const userToEdit = users[pendingUserEdit];
+
+      // Verify the entered PIN matches the user's PIN
+      if (pinVerifyInput === userToEdit.pin) {
+        // PIN is correct, allow editing
+        setEditingUser(pendingUserEdit);
+        setNewUser(userToEdit);
+        setShowUserModal(true);
+
+        // Close verification modal and reset
+        setShowPinVerifyModal(false);
+        setPinVerifyInput('');
+        setPendingUserEdit(null);
+      } else {
+        // PIN is incorrect
+        alert('Incorrect PIN. Cannot edit this user.');
+        setPinVerifyInput('');
+      }
+    }
+  };
+
+  const closePinVerifyModal = () => {
+    setShowPinVerifyModal(false);
+    setPinVerifyInput('');
+    setPendingUserEdit(null);
+  };
+
   const editReward = (index) => {
     setEditingReward(index);
     setNewReward(rewards[index]);
@@ -632,29 +1018,353 @@ const FamilyDashboard = () => {
     });
   };
 
+  // Accent color classes mapping
+  const accentColors = {
+    teal: { bg: 'bg-teal-600', hover: 'hover:bg-teal-700', text: 'text-teal-400', gradient: 'from-teal-400 to-cyan-400' },
+    blue: { bg: 'bg-blue-600', hover: 'hover:bg-blue-700', text: 'text-blue-400', gradient: 'from-blue-400 to-cyan-400' },
+    purple: { bg: 'bg-purple-600', hover: 'hover:bg-purple-700', text: 'text-purple-400', gradient: 'from-purple-400 to-pink-400' },
+    green: { bg: 'bg-green-600', hover: 'hover:bg-green-700', text: 'text-green-400', gradient: 'from-green-400 to-emerald-400' },
+    orange: { bg: 'bg-orange-600', hover: 'hover:bg-orange-700', text: 'text-orange-400', gradient: 'from-orange-400 to-yellow-400' },
+    pink: { bg: 'bg-pink-600', hover: 'hover:bg-pink-700', text: 'text-pink-400', gradient: 'from-pink-400 to-rose-400' },
+    red: { bg: 'bg-red-600', hover: 'hover:bg-red-700', text: 'text-red-400', gradient: 'from-red-400 to-orange-400' },
+  };
+
+  const currentAccent = accentColors[accentColor] || accentColors.teal;
+
+  // If settings page is open, show settings page
+  if (showSettings) {
+    return (
+      <div className={`min-h-screen w-full ${themeMode === 'light' ? 'bg-gradient-to-br from-slate-100 via-gray-100 to-slate-100 text-gray-900' : 'bg-gradient-to-br from-gray-950 via-slate-950 to-gray-950 text-white'} p-4 md:p-6 overflow-x-hidden`}>
+        <div className="max-w-4xl mx-auto">
+          {/* Settings Header */}
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl mb-6`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Settings className={currentAccent.text} size={32} />
+                <h1 className="text-3xl font-bold">Settings</h1>
+              </div>
+              <button
+                onClick={() => setShowSettings(false)}
+                className={`${currentAccent.bg} ${currentAccent.hover} p-2 rounded-full transition`}
+              >
+                <X size={24} />
+              </button>
+            </div>
+          </div>
+
+          {/* Theme Settings */}
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl mb-6`}>
+            <h2 className="text-2xl font-bold mb-6">Theme</h2>
+
+            {/* Theme Mode */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>Display Mode:</label>
+              <div className="grid grid-cols-3 gap-3">
+                {['light', 'dark', 'auto'].map(mode => (
+                  <button
+                    key={mode}
+                    onClick={async () => {
+                      setThemeMode(mode);
+                      await saveThemeSettings({
+                        themeMode: mode,
+                        accentColor,
+                        colorCycleEnabled,
+                        colorCycleIntervalMinutes,
+                        lastColorChangeDate: localStorage.getItem('lastColorChangeDate'),
+                        lastColorChangeHour: localStorage.getItem('lastColorChangeHour') ? parseInt(localStorage.getItem('lastColorChangeHour')) : null
+                      });
+                    }}
+                    className={`px-4 py-3 rounded-lg font-medium transition ${
+                      themeMode === mode
+                        ? `${currentAccent.bg} text-white`
+                        : themeMode === 'light' ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-white/10 hover:bg-white/20'
+                    }`}
+                  >
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Accent Color */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>Accent Color:</label>
+              <div className="grid grid-cols-4 gap-3">
+                {Object.keys(accentColors).map(color => (
+                  <button
+                    key={color}
+                    onClick={async () => {
+                      setAccentColor(color);
+                      setColorCycleEnabled(false);
+                      await saveThemeSettings({
+                        themeMode,
+                        accentColor: color,
+                        colorCycleEnabled: false,
+                        colorCycleIntervalMinutes,
+                        lastColorChangeDate: localStorage.getItem('lastColorChangeDate'),
+                        lastColorChangeHour: localStorage.getItem('lastColorChangeHour') ? parseInt(localStorage.getItem('lastColorChangeHour')) : null
+                      });
+                    }}
+                    className={`px-4 py-3 rounded-lg font-medium transition ${
+                      accentColor === color && !colorCycleEnabled
+                        ? `${accentColors[color].bg} text-white`
+                        : themeMode === 'light' ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-white/10 hover:bg-white/20'
+                    }`}
+                  >
+                    {color.charAt(0).toUpperCase() + color.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Color Cycle */}
+            <div>
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>Color Cycle:</label>
+              <button
+                onClick={async () => {
+                  const newValue = !colorCycleEnabled;
+                  setColorCycleEnabled(newValue);
+                  const now = Date.now();
+                  if (newValue) {
+                    localStorage.setItem('lastColorChange', now.toString());
+                  }
+                  await saveThemeSettings({
+                    themeMode,
+                    accentColor,
+                    colorCycleEnabled: newValue,
+                    colorCycleIntervalMinutes,
+                    lastColorChangeDate: newValue ? now.toString() : localStorage.getItem('lastColorChangeDate'),
+                    lastColorChangeHour: localStorage.getItem('lastColorChangeHour') ? parseInt(localStorage.getItem('lastColorChangeHour')) : null
+                  });
+                }}
+                className={`w-full px-4 py-3 rounded-lg font-medium transition ${
+                  colorCycleEnabled
+                    ? `${currentAccent.bg} text-white`
+                    : themeMode === 'light' ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-white/10 hover:bg-white/20'
+                }`}
+              >
+                {colorCycleEnabled ? 'Color Cycle: ON' : 'Color Cycle: OFF'}
+              </button>
+              <p className={`text-xs ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-500'} mt-2`}>
+                When enabled, accent color rotates to unused colors
+              </p>
+
+              {/* Color Cycle Interval - only show when color cycle is enabled */}
+              {colorCycleEnabled && (
+                <div className="mt-4">
+                  <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                    Change color every (minutes):
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1440"
+                    value={colorCycleIntervalMinutes}
+                    onChange={async (e) => {
+                      const value = parseInt(e.target.value) || 1;
+                      setColorCycleIntervalMinutes(value);
+                      await saveThemeSettings({
+                        themeMode,
+                        accentColor,
+                        colorCycleEnabled,
+                        colorCycleIntervalMinutes: value,
+                        lastColorChangeDate: localStorage.getItem('lastColorChangeDate'),
+                        lastColorChangeHour: localStorage.getItem('lastColorChangeHour') ? parseInt(localStorage.getItem('lastColorChangeHour')) : null
+                      });
+                    }}
+                    className={`w-full ${themeMode === 'light' ? 'bg-gray-200 text-gray-900' : 'bg-white/10 text-white'} p-3 rounded-lg`}
+                  />
+                  <p className={`text-xs ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-500'} mt-1`}>
+                    Default: 60 minutes (1 hour)
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Screensaver Settings */}
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
+            <h2 className="text-2xl font-bold mb-6">Screensaver</h2>
+
+            {/* Enable Screensaver */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between">
+                <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} font-semibold`}>Enable Screensaver:</label>
+                <button
+                  onClick={async () => {
+                    const newValue = !screensaverEnabled;
+                    setScreensaverEnabled(newValue);
+                    await saveScreensaverSettings({
+                      enabled: newValue,
+                      delayMinutes: screensaverTimeout,
+                      imageIntervalMinutes: screensaverDuration
+                    });
+                  }}
+                  className={`px-6 py-2 rounded-lg font-medium transition ${
+                    screensaverEnabled
+                      ? `${currentAccent.bg} text-white`
+                      : themeMode === 'light' ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-white/10 hover:bg-white/20'
+                  }`}
+                >
+                  {screensaverEnabled ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            </div>
+
+            {/* Screensaver Timeout */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Activate after (minutes):
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="60"
+                value={screensaverTimeout}
+                onChange={async (e) => {
+                  const value = parseInt(e.target.value) || 1;
+                  setScreensaverTimeout(value);
+                  await saveScreensaverSettings({
+                    enabled: screensaverEnabled,
+                    delayMinutes: value,
+                    imageIntervalMinutes: screensaverDuration
+                  });
+                }}
+                className={`w-full ${themeMode === 'light' ? 'bg-gray-200 text-gray-900' : 'bg-white/10 text-white'} p-3 rounded-lg`}
+              />
+            </div>
+
+            {/* Image Duration */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Image display duration (seconds):
+              </label>
+              <input
+                type="number"
+                min="5"
+                max="300"
+                value={screensaverDuration}
+                onChange={async (e) => {
+                  const value = parseInt(e.target.value) || 10;
+                  setScreensaverDuration(value);
+                  await saveScreensaverSettings({
+                    enabled: screensaverEnabled,
+                    delayMinutes: screensaverTimeout,
+                    imageIntervalMinutes: value
+                  });
+                }}
+                className={`w-full ${themeMode === 'light' ? 'bg-gray-200 text-gray-900' : 'bg-white/10 text-white'} p-3 rounded-lg`}
+              />
+            </div>
+
+            {/* Photo Upload */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Upload Photos:
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    handlePhotoUpload(Array.from(e.target.files));
+                    e.target.value = ''; // Reset input
+                  }
+                }}
+                className={`w-full ${themeMode === 'light' ? 'bg-gray-200 text-gray-900' : 'bg-white/10 text-white'} p-3 rounded-lg`}
+              />
+              <p className={`text-xs ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-500'} mt-2`}>
+                Photos will be saved to web-app/data/photos
+              </p>
+            </div>
+
+            {/* Uploaded Images List */}
+            {screensaverImages.length > 0 && (
+              <div className="mb-6">
+                <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                  Uploaded Images ({screensaverImages.length}):
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  {screensaverImages.map((img, index) => (
+                    <div key={index} className="relative group">
+                      <img
+                        src={img}
+                        alt={`Screensaver ${index + 1}`}
+                        className="w-full h-24 object-cover rounded-lg"
+                      />
+                      <button
+                        onClick={() => deletePhoto(img)}
+                        className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 p-1 rounded opacity-0 group-hover:opacity-100 transition"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Preview Button */}
+            <button
+              onClick={() => {
+                setCurrentImageIndex(0);
+                setShowScreensaverPreview(true);
+              }}
+              disabled={screensaverImages.length === 0}
+              className={`w-full ${currentAccent.bg} ${currentAccent.hover} py-3 rounded-lg font-bold transition disabled:opacity-50 disabled:cursor-not-allowed text-white`}
+            >
+              Preview Screensaver
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-gray-950 via-slate-950 to-gray-950 text-white p-4 md:p-6 overflow-x-hidden">
+    <div className={`min-h-screen w-full ${themeMode === 'light' ? 'bg-gradient-to-br from-slate-100 via-gray-100 to-slate-100 text-gray-900' : 'bg-gradient-to-br from-gray-950 via-slate-950 to-gray-950 text-white'} p-4 md:p-6 overflow-x-hidden`}>
       <div className="max-w-7xl mx-auto w-full">
+        {/* Settings and Power Icons */}
+        <div className="absolute top-6 right-6 z-10 flex gap-3">
+          <button
+            onClick={() => {
+              setCurrentImageIndex(0);
+              setScreensaverActive(true);
+            }}
+            disabled={screensaverImages.length === 0}
+            className={`${themeMode === 'light' ? 'bg-white/70 hover:bg-white/90' : 'bg-white/10 hover:bg-white/20'} backdrop-blur-lg p-3 rounded-full transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            <Power className={currentAccent.text} size={28} />
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className={`${themeMode === 'light' ? 'bg-white/70 hover:bg-white/90' : 'bg-white/10 hover:bg-white/20'} backdrop-blur-lg p-3 rounded-full transition shadow-lg`}
+          >
+            <Settings className={currentAccent.text} size={28} />
+          </button>
+        </div>
+
         {/* Time and Weather Section */}
-        <div className="text-center mb-8 bg-white/5 backdrop-blur-lg rounded-3xl p-8 shadow-2xl">
-          <div className="text-slate-400 text-lg mb-2">{formatDate(currentTime)}</div>
-          <div className="text-8xl font-bold mb-6 bg-gradient-to-r from-teal-400 to-cyan-400 bg-clip-text text-transparent">
+        <div className={`text-center mb-8 ${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-3xl p-8 shadow-2xl`}>
+          <div className={`${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} text-lg mb-2`}>{formatDate(currentTime)}</div>
+          <div className={`text-8xl font-bold mb-6 bg-gradient-to-r ${currentAccent.gradient} bg-clip-text text-transparent`}>
             {formatTime(currentTime)}
           </div>
           <div className="flex items-center justify-center gap-4">
             <Sun size={40} className="text-yellow-400" />
             <div className="text-4xl font-semibold">75°F</div>
-            <div className="text-xl text-slate-300">Clear</div>
+            <div className={`text-xl ${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'}`}>Clear</div>
           </div>
-          <div className="text-sm text-slate-400 mt-2">North Richland Hills, TX</div>
+          <div className={`text-sm ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} mt-2`}>North Richland Hills, TX</div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Calendar Events */}
-          <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 shadow-xl">
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Calendar className="text-teal-400" size={24} />
+                <Calendar className={currentAccent.text} size={24} />
                 <h2 className="text-2xl font-bold">Calendar</h2>
               </div>
               <div className="flex gap-2">
@@ -662,22 +1372,22 @@ const FamilyDashboard = () => {
                   <>
                     <button
                       onClick={loadCalendarEvents}
-                      className="text-slate-400 hover:text-white transition text-sm"
+                      className={`${themeMode === 'light' ? 'text-gray-600 hover:text-gray-900' : 'text-slate-400 hover:text-white'} transition text-sm`}
                       disabled={calendarLoading}
                     >
                       {calendarLoading ? 'Loading...' : 'Refresh'}
                     </button>
                     <button
                       onClick={handleSignoutClick}
-                      className="text-slate-400 hover:text-white transition text-sm"
+                      className={`${themeMode === 'light' ? 'text-gray-600 hover:text-gray-900' : 'text-slate-400 hover:text-white'} transition text-sm`}
                     >
                       Sign Out
                     </button>
                   </>
                 ) : (
                   <button
-                    onClick={handleAuthClick}
-                    className="bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded-lg text-sm transition"
+                    onClick={() => handleGoogleLogin()}
+                    className={`${currentAccent.bg} ${currentAccent.hover} px-4 py-2 rounded-lg text-sm transition text-white`}
                   >
                     Sign In with Google
                   </button>
@@ -698,25 +1408,25 @@ const FamilyDashboard = () => {
                   <div className="text-red-400 mb-2">{calendarError}</div>
                   <button
                     onClick={loadCalendarEvents}
-                    className="text-teal-400 hover:text-teal-300 text-sm"
+                    className={`${currentAccent.text} text-sm`}
                   >
                     Try Again
                   </button>
                 </div>
               ) : calendarEvents.length === 0 ? (
-                <div className="text-center text-slate-400 py-8">
+                <div className={`text-center ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} py-8`}>
                   No upcoming events
                 </div>
               ) : (
                 calendarEvents.map(event => (
                   <div
                     key={event.id}
-                    className="bg-white/10 p-4 rounded-xl border-l-4"
+                    className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl border-l-4`}
                     style={{ borderLeftColor: event.color }}
                   >
                     <div className="font-semibold text-lg">{event.title}</div>
-                    <div className="text-slate-300 text-sm mt-1">{event.time}</div>
-                    <div className="text-slate-400 text-xs mt-1">{event.date}</div>
+                    <div className={`${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'} text-sm mt-1`}>{event.time}</div>
+                    <div className={`${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} text-xs mt-1`}>{event.date}</div>
                   </div>
                 ))
               )}
@@ -724,18 +1434,36 @@ const FamilyDashboard = () => {
           </div>
 
           {/* Tasks Section */}
-          <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 shadow-xl">
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold">Tasks</h2>
               <button
                 onClick={() => setShowTaskModal(true)}
-                className="bg-teal-600 hover:bg-teal-700 p-2 rounded-full transition"
+                className={`${currentAccent.bg} ${currentAccent.hover} p-2 rounded-full transition text-white`}
               >
                 <Plus size={24} />
               </button>
             </div>
+
+            {/* Period Filter Buttons */}
+            <div className="flex gap-2 mb-4">
+              {['Morning', 'Afternoon', 'Evening'].map(period => (
+                <button
+                  key={period}
+                  onClick={() => togglePeriod(period)}
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
+                    selectedPeriods.includes(period)
+                      ? `${currentAccent.bg} text-white`
+                      : themeMode === 'light' ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-white/10 text-slate-400 hover:bg-white/20'
+                  }`}
+                >
+                  {period}
+                </button>
+              ))}
+            </div>
+
             <div className="space-y-3">
-              {tasks.map(task => (
+              {tasks.filter(isTaskForToday).filter(task => selectedPeriods.includes(task.period || task.time || 'Morning')).map(task => (
                 <div
                   key={task.id}
                   className="bg-white/10 p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:bg-white/15 transition"
@@ -760,7 +1488,7 @@ const FamilyDashboard = () => {
           </div>
 
           {/* Points Section */}
-          <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 shadow-xl">
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Award className="text-yellow-400" size={24} />
@@ -768,7 +1496,7 @@ const FamilyDashboard = () => {
               </div>
               <button
                 onClick={() => setShowUserModal(true)}
-                className="bg-teal-600 hover:bg-teal-700 p-2 rounded-full transition"
+                className={`${currentAccent.bg} ${currentAccent.hover} p-2 rounded-full transition text-white`}
               >
                 <Users size={20} />
               </button>
@@ -807,19 +1535,19 @@ const FamilyDashboard = () => {
           </div>
 
           {/* Rewards Section */}
-          <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 shadow-xl">
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold">Rewards</h2>
               <button
                 onClick={() => setShowRewardModal(true)}
-                className="bg-teal-600 hover:bg-teal-700 p-2 rounded-full transition"
+                className={`${currentAccent.bg} ${currentAccent.hover} p-2 rounded-full transition text-white`}
               >
                 <Plus size={24} />
               </button>
             </div>
             <div className="space-y-4">
               {rewards.map(reward => (
-                <div key={reward.id} className="bg-white/10 p-4 rounded-xl">
+                <div key={reward.id} className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl`}>
                   <div className="mb-3">
                     <div className="font-semibold text-lg">{reward.name}</div>
                     <div className="text-yellow-400 text-sm">{reward.cost} points</div>
@@ -830,9 +1558,9 @@ const FamilyDashboard = () => {
                         key={user.name}
                         onClick={() => redeemReward(reward, user.name)}
                         disabled={userPoints[user.name] < reward.cost}
-                        className={`px-4 py-2 rounded-lg font-medium transition ${
+                        className={`px-4 py-2 rounded-lg font-medium transition text-white ${
                           userPoints[user.name] >= reward.cost
-                            ? 'bg-teal-600 hover:bg-teal-700'
+                            ? `${currentAccent.bg} ${currentAccent.hover}`
                             : 'bg-slate-600 opacity-50 cursor-not-allowed'
                         }`}
                       >
@@ -922,7 +1650,7 @@ const FamilyDashboard = () => {
                       onClick={() => setNewTask({...newTask, assignedTo: user.name})}
                       className={`px-4 py-2 rounded-lg font-medium transition ${
                         newTask.assignedTo === user.name
-                          ? 'bg-teal-600'
+                          ? `${currentAccent.bg} text-white`
                           : 'bg-white/10 hover:bg-white/20'
                       }`}
                     >
@@ -941,7 +1669,7 @@ const FamilyDashboard = () => {
                       onClick={() => toggleDay(day)}
                       className={`px-3 py-2 rounded-lg font-medium transition ${
                         newTask.recurrence.includes(day)
-                          ? 'bg-teal-600'
+                          ? `${currentAccent.bg} text-white`
                           : 'bg-white/10 hover:bg-white/20'
                       }`}
                     >
@@ -954,13 +1682,13 @@ const FamilyDashboard = () => {
               <div className="mb-6">
                 <label className="text-sm text-slate-400 mb-2 block">Time Period:</label>
                 <div className="flex gap-2">
-                  {['Morning', 'Evening', 'Night'].map(period => (
+                  {['Morning', 'Afternoon', 'Evening'].map(period => (
                     <button
                       key={period}
                       onClick={() => setNewTask({...newTask, period})}
                       className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
                         newTask.period === period
-                          ? 'bg-teal-600'
+                          ? `${currentAccent.bg} text-white`
                           : 'bg-white/10 hover:bg-white/20'
                       }`}
                     >
@@ -972,7 +1700,7 @@ const FamilyDashboard = () => {
 
               <button
                 onClick={editingTask !== null ? saveEditedTask : addTask}
-                className="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition"
+                className={`w-full ${currentAccent.bg} ${currentAccent.hover} py-3 rounded-lg font-bold transition text-white`}
               >
                 {editingTask !== null ? 'Save Changes' : 'Add Task'}
               </button>
@@ -1047,7 +1775,7 @@ const FamilyDashboard = () => {
 
               <button
                 onClick={editingReward !== null ? saveEditedReward : addReward}
-                className="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition"
+                className={`w-full ${currentAccent.bg} ${currentAccent.hover} py-3 rounded-lg font-bold transition text-white`}
               >
                 {editingReward !== null ? 'Save Changes' : 'Add Reward'}
               </button>
@@ -1075,7 +1803,10 @@ const FamilyDashboard = () => {
                   <div key={index} className="bg-white/10 p-4 rounded-xl flex justify-between items-center">
                     <div>
                       <div className="font-semibold text-lg">{user.name}</div>
-                      <div className="text-sm text-slate-400">{user.type} • {user.points} points</div>
+                      <div className="text-sm text-slate-400">
+                        {user.type} • {user.points} points
+                        {user.type === 'Parent' && user.pin && ` • PIN: ••••`}
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -1117,7 +1848,7 @@ const FamilyDashboard = () => {
                     onClick={() => setNewUser({...newUser, type: 'Child'})}
                     className={`px-4 py-2 rounded-lg font-medium transition ${
                       newUser.type === 'Child'
-                        ? 'bg-teal-600'
+                        ? `${currentAccent.bg} text-white`
                         : 'bg-white/10 hover:bg-white/20'
                     }`}
                   >
@@ -1127,7 +1858,7 @@ const FamilyDashboard = () => {
                     onClick={() => setNewUser({...newUser, type: 'Parent'})}
                     className={`px-4 py-2 rounded-lg font-medium transition ${
                       newUser.type === 'Parent'
-                        ? 'bg-teal-600'
+                        ? `${currentAccent.bg} text-white`
                         : 'bg-white/10 hover:bg-white/20'
                     }`}
                   >
@@ -1166,7 +1897,7 @@ const FamilyDashboard = () => {
 
               <button
                 onClick={editingUser !== null ? saveEditedUser : addUser}
-                className="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition"
+                className={`w-full ${currentAccent.bg} ${currentAccent.hover} py-3 rounded-lg font-bold transition text-white`}
               >
                 {editingUser !== null ? 'Save Changes' : 'Add User'}
               </button>
@@ -1219,7 +1950,60 @@ const FamilyDashboard = () => {
               <button
                 onClick={handlePinSubmit}
                 disabled={pinInput.length !== 4}
-                className="flex-1 bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`flex-1 ${currentAccent.bg} ${currentAccent.hover} py-3 rounded-lg font-bold transition disabled:opacity-50 disabled:cursor-not-allowed text-white`}
+              >
+                Verify
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PIN Verification Modal for Editing User */}
+      {showPinVerifyModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+          <div className="bg-slate-900 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold">Enter Your PIN</h3>
+              <button onClick={closePinVerifyModal}>
+                <X size={24} className="text-slate-400 hover:text-white" />
+              </button>
+            </div>
+
+            <p className="text-slate-300 mb-6">
+              To edit this user's information, please enter your current PIN.
+            </p>
+
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="Enter 4-digit PIN"
+              value={pinVerifyInput}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '');
+                setPinVerifyInput(value);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && pinVerifyInput.length === 4) {
+                  handlePinVerification();
+                }
+              }}
+              className="w-full bg-white/10 p-4 rounded-lg text-white text-center text-2xl tracking-widest placeholder-slate-400 mb-6"
+              autoFocus
+            />
+
+            <div className="flex gap-3">
+              <button
+                onClick={closePinVerifyModal}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 py-3 rounded-lg font-bold transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePinVerification}
+                disabled={pinVerifyInput.length !== 4}
+                className={`flex-1 ${currentAccent.bg} ${currentAccent.hover} py-3 rounded-lg font-bold transition disabled:opacity-50 disabled:cursor-not-allowed text-white`}
               >
                 Verify
               </button>
@@ -1271,8 +2055,73 @@ const FamilyDashboard = () => {
           `}</style>
         </div>
       )}
+
+      {/* Screensaver */}
+      {(screensaverActive || showScreensaverPreview) && screensaverImages.length > 0 && (
+        <div className="fixed inset-0 bg-black z-[200] flex items-center justify-center">
+          {/* Screensaver Images with Crossfade */}
+          {screensaverImages.map((img, index) => (
+            <div
+              key={index}
+              className="absolute inset-0 transition-opacity duration-1000"
+              style={{
+                opacity: index === currentImageIndex ? 1 : 0,
+                pointerEvents: 'none'
+              }}
+            >
+              <img
+                src={img}
+                alt={`Screensaver ${index + 1}`}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          ))}
+
+          {/* Weather/Time/Date Overlay */}
+          <div className="absolute bottom-6 left-6 bg-black/50 backdrop-blur-md rounded-2xl p-6 text-white z-10">
+            <div className="text-sm text-slate-300 mb-1">{formatDate(currentTime)}</div>
+            <div className={`text-5xl font-bold mb-3 bg-gradient-to-r ${currentAccent.gradient} bg-clip-text text-transparent`}>
+              {formatTime(currentTime)}
+            </div>
+            <div className="flex items-center gap-3">
+              <Sun size={24} className="text-yellow-400" />
+              <div className="text-2xl font-semibold">75°F</div>
+              <div className="text-lg text-slate-300">Clear</div>
+            </div>
+          </div>
+
+          {/* Close button for preview mode */}
+          {showScreensaverPreview && (
+            <button
+              onClick={() => {
+                setShowScreensaverPreview(false);
+                setCurrentImageIndex(0);
+              }}
+              className={`absolute top-6 right-6 ${themeMode === 'light' ? 'bg-white/70 hover:bg-white/90' : 'bg-white/10 hover:bg-white/20'} backdrop-blur-lg p-3 rounded-full transition shadow-lg z-10`}
+            >
+              <X size={28} className={currentAccent.text} />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
-export default FamilyDashboard;
+// Wrap with GoogleOAuthProvider
+const App = () => {
+  console.log('=== Google OAuth Configuration ===');
+  console.log('Client ID:', GOOGLE_CLIENT_ID);
+  console.log('API Key:', GOOGLE_API_KEY);
+  console.log('Calendar IDs:', CALENDAR_IDS);
+  console.log('Current URL:', window.location.href);
+  console.log('Current Port:', window.location.port);
+
+  return (
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <FamilyDashboard />
+    </GoogleOAuthProvider>
+  );
+};
+
+export default App;
