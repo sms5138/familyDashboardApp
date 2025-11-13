@@ -23,16 +23,14 @@ async function ensureDataDir() {
 async function initializeDataFiles() {
   const defaultData = {
     tasks: [
-      { id: 1, name: 'Make Bed', points: 1, assignedTo: 'John', completed: false, recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], time: '8:00 AM' },
-      { id: 2, name: 'Dishes', points: 2, assignedTo: 'Sarah', completed: false, recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], time: '7:00 PM' },
+      { id: 1, name: 'Make Bed', points: 1, assignedTo: 'Nolan', completed: false, recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], time: '8:00 AM' },
     ],
     rewards: [
       { id: 1, name: 'Ice Cream', cost: 5 },
       { id: 2, name: 'Movie Night', cost: 10 },
     ],
     userPoints: {
-      John: 3,
-      Sarah: 7,
+      Nolan: 3,
       Mom: 12,
       Dad: 15
     },
