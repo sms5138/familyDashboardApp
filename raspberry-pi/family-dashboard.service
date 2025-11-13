@@ -1,0 +1,14 @@
+[Unit]
+Description=Family Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/FamilyDashboard
+ExecStart=/home/pi/start-dashboard.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

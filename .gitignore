@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
+*.log
+
+# Storage data (don't commit personal data)
+storage-server/data/*.json
+storage-server/data/backups/*.json
+
+# Expo
+.expo/
+web-build/
