@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Plus, X, Calendar, Sun, Award, CheckCircle, Circle, Users } from 'lucide-react';
+import { gapi } from 'gapi-script';
 import './global.css';
+
+// Google Calendar API Configuration
+const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_API_KEY || 'YOUR_API_KEY';
+const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || 'YOUR_CLIENT_ID';
+const CALENDAR_IDS = (process.env.REACT_APP_CALENDAR_IDS || 'primary').split(',');
+const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 
 const USERS = ['Nolan', 'Mom', 'Dad'];
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -19,11 +26,10 @@ const FamilyDashboard = () => {
     Mom: 12,
     Dad: 15
   });
-  const [calendarEvents] = useState([
-    { id: 1, title: 'Hockey Lesson', time: '4:15 - 5:15 PM', date: 'Wed Nov 12', color: '#10b981' },
-    { id: 2, title: 'PTA Room Reps Meeting', time: '5:30 - 6:30 PM', date: 'Wed Nov 12', color: '#14b8a6' },
-    { id: 3, title: 'Hockey Practice', time: '8:15 - 9:15 AM', date: 'Sat Nov 15', color: '#10b981' },
-  ]);
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarLoading, setCalendarLoading] = useState(true);
+  const [calendarError, setCalendarError] = useState(null);
+  const [isSignedIn, setIsSignedIn] = useState(false);
 
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showRewardModal, setShowRewardModal] = useState(false);
@@ -40,6 +46,150 @@ const FamilyDashboard = () => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Initialize Google API client
+  useEffect(() => {
+    const initClient = () => {
+      gapi.load('client:auth2', () => {
+        gapi.client.init({
+          apiKey: GOOGLE_API_KEY,
+          clientId: GOOGLE_CLIENT_ID,
+          discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'],
+          scope: SCOPES,
+        }).then(() => {
+          // Listen for sign-in state changes
+          const authInstance = gapi.auth2.getAuthInstance();
+          authInstance.isSignedIn.listen(updateSigninStatus);
+
+          // Handle initial sign-in state
+          updateSigninStatus(authInstance.isSignedIn.get());
+        }).catch((error) => {
+          console.error('Error initializing Google API client:', error);
+          setCalendarError('Failed to initialize Google Calendar. Please check your API credentials.');
+          setCalendarLoading(false);
+        });
+      });
+    };
+
+    initClient();
+  }, []);
+
+  const updateSigninStatus = (isSignedIn) => {
+    setIsSignedIn(isSignedIn);
+    if (isSignedIn) {
+      loadCalendarEvents();
+    } else {
+      setCalendarLoading(false);
+      setCalendarError(null);
+      setCalendarEvents([]);
+    }
+  };
+
+  const handleAuthClick = () => {
+    const authInstance = gapi.auth2.getAuthInstance();
+    authInstance.signIn().catch((error) => {
+      console.error('Error signing in:', error);
+      setCalendarError('Failed to sign in to Google Calendar');
+    });
+  };
+
+  const handleSignoutClick = () => {
+    const authInstance = gapi.auth2.getAuthInstance();
+    authInstance.signOut();
+  };
+
+  const loadCalendarEvents = async () => {
+    try {
+      setCalendarLoading(true);
+      setCalendarError(null);
+
+      // Get events for the next 7 days
+      const now = new Date();
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + 7);
+
+      let allEvents = [];
+
+      // Fetch events from each calendar ID
+      for (const calendarId of CALENDAR_IDS) {
+        try {
+          const response = await gapi.client.calendar.events.list({
+            calendarId: calendarId.trim(),
+            timeMin: now.toISOString(),
+            timeMax: endDate.toISOString(),
+            showDeleted: false,
+            singleEvents: true,
+            orderBy: 'startTime',
+          });
+
+          const events = response.result.items || [];
+          allEvents = allEvents.concat(events.map(event => ({
+            ...event,
+            calendarId: calendarId.trim()
+          })));
+        } catch (error) {
+          console.error(`Error fetching events from calendar ${calendarId}:`, error);
+        }
+      }
+
+      // Sort events by start date and format them
+      const formattedEvents = allEvents
+        .filter(event => event.start?.dateTime || event.start?.date)
+        .sort((a, b) => {
+          const aStart = new Date(a.start.dateTime || a.start.date);
+          const bStart = new Date(b.start.dateTime || b.start.date);
+          return aStart - bStart;
+        })
+        .map((event, index) => {
+          const startDate = new Date(event.start.dateTime || event.start.date);
+          const endDate = new Date(event.end.dateTime || event.end.date);
+
+          // Format time (handle all-day events)
+          let timeStr;
+          if (event.start.dateTime) {
+            timeStr = `${startDate.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit'
+            })} - ${endDate.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit'
+            })}`;
+          } else {
+            timeStr = 'All day';
+          }
+
+          // Format date
+          const dateStr = startDate.toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric'
+          });
+
+          // Assign colors based on calendar
+          const colors = ['#10b981', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b'];
+          const calendarIndex = CALENDAR_IDS.indexOf(event.calendarId);
+          const color = event.colorId
+            ? `#${event.colorId}`
+            : colors[calendarIndex % colors.length];
+
+          return {
+            id: event.id,
+            title: event.summary || 'Untitled Event',
+            time: timeStr,
+            date: dateStr,
+            color: color,
+            calendarId: event.calendarId
+          };
+        });
+
+      setCalendarEvents(formattedEvents);
+      setCalendarLoading(false);
+    } catch (error) {
+      console.error('Error loading calendar events:', error);
+      setCalendarError('Failed to load calendar events');
+      setCalendarLoading(false);
+    }
+  };
 
   const addTask = () => {
     if (newTask.name.trim()) {
@@ -138,19 +288,69 @@ const FamilyDashboard = () => {
                 <Calendar className="text-teal-400" size={24} />
                 <h2 className="text-2xl font-bold">Calendar</h2>
               </div>
+              <div className="flex gap-2">
+                {isSignedIn ? (
+                  <>
+                    <button
+                      onClick={loadCalendarEvents}
+                      className="text-slate-400 hover:text-white transition text-sm"
+                      disabled={calendarLoading}
+                    >
+                      {calendarLoading ? 'Loading...' : 'Refresh'}
+                    </button>
+                    <button
+                      onClick={handleSignoutClick}
+                      className="text-slate-400 hover:text-white transition text-sm"
+                    >
+                      Sign Out
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={handleAuthClick}
+                    className="bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded-lg text-sm transition"
+                  >
+                    Sign In with Google
+                  </button>
+                )}
+              </div>
             </div>
             <div className="space-y-3">
-              {calendarEvents.map(event => (
-                <div
-                  key={event.id}
-                  className="bg-white/10 p-4 rounded-xl border-l-4"
-                  style={{ borderLeftColor: event.color }}
-                >
-                  <div className="font-semibold text-lg">{event.title}</div>
-                  <div className="text-slate-300 text-sm mt-1">{event.time}</div>
-                  <div className="text-slate-400 text-xs mt-1">{event.date}</div>
+              {!isSignedIn ? (
+                <div className="text-center text-slate-400 py-8">
+                  Sign in with Google to view your calendar events
                 </div>
-              ))}
+              ) : calendarLoading ? (
+                <div className="text-center text-slate-400 py-8">
+                  Loading calendar events...
+                </div>
+              ) : calendarError ? (
+                <div className="text-center py-8">
+                  <div className="text-red-400 mb-2">{calendarError}</div>
+                  <button
+                    onClick={loadCalendarEvents}
+                    className="text-teal-400 hover:text-teal-300 text-sm"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              ) : calendarEvents.length === 0 ? (
+                <div className="text-center text-slate-400 py-8">
+                  No upcoming events
+                </div>
+              ) : (
+                calendarEvents.map(event => (
+                  <div
+                    key={event.id}
+                    className="bg-white/10 p-4 rounded-xl border-l-4"
+                    style={{ borderLeftColor: event.color }}
+                  >
+                    <div className="font-semibold text-lg">{event.title}</div>
+                    <div className="text-slate-300 text-sm mt-1">{event.time}</div>
+                    <div className="text-slate-400 text-xs mt-1">{event.date}</div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
