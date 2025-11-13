@@ -20,6 +20,7 @@
 - ✅ Assign tasks to family members
 - ✅ Set point values for completed tasks
 - ✅ Period-based filtering (Morning, Afternoon, Evening)
+- ✅ Automatic sorting by period (Morning → Afternoon → Evening)
 - ✅ Visual task completion with animations
 - ✅ Track daily progress
 
@@ -28,6 +29,7 @@
 - 🎁 Create custom rewards with point costs
 - 💰 Redeem rewards when earned enough points
 - 📊 Visual point tracking
+- 🔢 Automatic sorting by cost (smallest → largest)
 - 👶 Child/Parent user types
 - 🎨 Customizable user avatars
 

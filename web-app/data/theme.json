@@ -1,8 +1,8 @@
 {
   "themeMode": "dark",
-  "accentColor": "pink",
+  "accentColor": "green",
   "colorCycleEnabled": true,
-  "colorCycleIntervalMinutes": 1,
-  "lastColorChangeDate": "1763074407546",
-  "lastColorChangeHour": 16
+  "colorCycleIntervalMinutes": 15,
+  "lastColorChangeDate": "1763075663306",
+  "lastColorChangeHour": 17
 }

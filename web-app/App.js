@@ -15,13 +15,40 @@ const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Weekend'];
 
 const FamilyDashboard = () => {
+  // Sorting helper functions
+  const sortTasksByPeriod = (tasksToSort) => {
+    const periodOrder = { 'Morning': 1, 'Afternoon': 2, 'Evening': 3 };
+    return [...tasksToSort].sort((a, b) => {
+      const periodA = a.period || a.time || 'Morning';
+      const periodB = b.period || b.time || 'Morning';
+      const orderA = periodOrder[periodA] || 999;
+      const orderB = periodOrder[periodB] || 999;
+      return orderA - orderB;
+    });
+  };
+
+  const sortRewardsByCost = (rewardsToSort) => {
+    return [...rewardsToSort].sort((a, b) => {
+      const costA = a.cost || 0;
+      const costB = b.cost || 0;
+      return costA - costB;
+    });
+  };
+
   const [currentTime, setCurrentTime] = useState(new Date());
   const [users, setUsers] = useState([]);
-  const [tasks, setTasks] = useState([
-  ]);
-  const [rewards, setRewards] = useState([
-  ]);
+  const [tasks, setTasksInternal] = useState([]);
+  const [rewards, setRewardsInternal] = useState([]);
   const [userPoints, setUserPoints] = useState({});
+
+  // Wrapped setters that automatically sort
+  const setTasks = (newTasks) => {
+    setTasksInternal(sortTasksByPeriod(newTasks));
+  };
+
+  const setRewards = (newRewards) => {
+    setRewardsInternal(sortRewardsByCost(newRewards));
+  };
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [calendarError, setCalendarError] = useState(null);
@@ -43,6 +70,7 @@ const FamilyDashboard = () => {
   const [editingTask, setEditingTask] = useState(null);
   const [hideParents, setHideParents] = useState(true);
   const [selectedPeriods, setSelectedPeriods] = useState(['Morning', 'Afternoon', 'Evening']);
+  const [selectedCalendarSections, setSelectedCalendarSections] = useState(['Today', 'Tomorrow', 'Later']);
   const [newUser, setNewUser] = useState({ name: '', type: 'Child', points: 0, pin: '' });
 
   // Settings state
@@ -1008,6 +1036,7 @@ const FamilyDashboard = () => {
             title: event.summary || 'Untitled Event',
             time: timeStr,
             date: dateStr,
+            start: event.start.dateTime || event.start.date, // Preserve raw date for grouping
             color: color,
             calendarId: event.calendarId
           };
@@ -1058,6 +1087,18 @@ const FamilyDashboard = () => {
       } else {
         // Add period if not selected
         return [...prev, period];
+      }
+    });
+  };
+
+  const toggleCalendarSection = (section) => {
+    setSelectedCalendarSections(prev => {
+      if (prev.includes(section)) {
+        // Remove section if already selected
+        return prev.filter(s => s !== section);
+      } else {
+        // Add section if not selected
+        return [...prev, section];
       }
     });
   };
@@ -2487,6 +2528,25 @@ const FamilyDashboard = () => {
               </div>
             </div>
 
+            {/* Section Filter Buttons */}
+            {isSignedIn && !calendarLoading && !calendarError && calendarEvents.length > 0 && (
+              <div className="flex gap-2 mb-4">
+                {['Today', 'Tomorrow', 'Later'].map(section => (
+                  <button
+                    key={section}
+                    onClick={() => toggleCalendarSection(section)}
+                    className={`flex-1 px-4 py-2 rounded-lg font-medium transition ${
+                      selectedCalendarSections.includes(section)
+                        ? `${currentAccent.bg} text-white`
+                        : themeMode === 'light' ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-white/10 text-slate-400 hover:bg-white/20'
+                    }`}
+                  >
+                    {section}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className={`space-y-3 ${isSignedIn && !calendarLoading && !calendarError && calendarEvents.length > experienceSettings.modules.calendar.displayLimit ? 'overflow-y-auto max-h-[800px] pr-2' : ''}`}>
               {!isSignedIn ? (
                 <div className="text-center text-slate-400 py-8">
@@ -2511,17 +2571,94 @@ const FamilyDashboard = () => {
                   No upcoming events
                 </div>
               ) : (
-                calendarEvents.map(event => (
-                  <div
-                    key={event.id}
-                    className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl border-l-4`}
-                    style={{ borderLeftColor: event.color }}
-                  >
-                    <div className="font-semibold text-lg">{event.title}</div>
-                    <div className={`${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'} text-sm mt-1`}>{event.time}</div>
-                    <div className={`${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} text-xs mt-1`}>{event.date}</div>
-                  </div>
-                ))
+                (() => {
+                  // Group events by Today, Tomorrow, and Later
+                  const now = new Date();
+                  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                  const tomorrow = new Date(today);
+                  tomorrow.setDate(tomorrow.getDate() + 1);
+                  const dayAfterTomorrow = new Date(tomorrow);
+                  dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+                  const todayEvents = [];
+                  const tomorrowEvents = [];
+                  const laterEvents = [];
+
+                  calendarEvents.forEach(event => {
+                    const eventDate = new Date(event.start);
+                    const eventDay = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate());
+
+                    if (eventDay.getTime() === today.getTime()) {
+                      todayEvents.push(event);
+                    } else if (eventDay.getTime() === tomorrow.getTime()) {
+                      tomorrowEvents.push(event);
+                    } else {
+                      laterEvents.push(event);
+                    }
+                  });
+
+                  return (
+                    <>
+                      {/* Today Section */}
+                      {todayEvents.length > 0 && selectedCalendarSections.includes('Today') && (
+                        <div className="space-y-3">
+                          <h3 className={`text-sm font-semibold uppercase tracking-wide ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'}`}>
+                            Today
+                          </h3>
+                          {todayEvents.map(event => (
+                            <div
+                              key={event.id}
+                              className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl border-l-4`}
+                              style={{ borderLeftColor: event.color }}
+                            >
+                              <div className="font-semibold text-lg">{event.title}</div>
+                              <div className={`${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'} text-sm mt-1`}>{event.time}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Tomorrow Section */}
+                      {tomorrowEvents.length > 0 && selectedCalendarSections.includes('Tomorrow') && (
+                        <div className="space-y-3">
+                          <h3 className={`text-sm font-semibold uppercase tracking-wide ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} ${todayEvents.length > 0 && selectedCalendarSections.includes('Today') ? 'mt-4' : ''}`}>
+                            Tomorrow
+                          </h3>
+                          {tomorrowEvents.map(event => (
+                            <div
+                              key={event.id}
+                              className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl border-l-4`}
+                              style={{ borderLeftColor: event.color }}
+                            >
+                              <div className="font-semibold text-lg">{event.title}</div>
+                              <div className={`${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'} text-sm mt-1`}>{event.time}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Later Section */}
+                      {laterEvents.length > 0 && selectedCalendarSections.includes('Later') && (
+                        <div className="space-y-3">
+                          <h3 className={`text-sm font-semibold uppercase tracking-wide ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} ${((todayEvents.length > 0 && selectedCalendarSections.includes('Today')) || (tomorrowEvents.length > 0 && selectedCalendarSections.includes('Tomorrow'))) ? 'mt-4' : ''}`}>
+                            Later
+                          </h3>
+                          {laterEvents.map(event => (
+                            <div
+                              key={event.id}
+                              className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl border-l-4`}
+                              style={{ borderLeftColor: event.color }}
+                            >
+                              <div className="font-semibold text-lg">{event.title}</div>
+                              <div className={`${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'} text-sm mt-1`}>{event.time}</div>
+                              <div className={`${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} text-xs mt-1`}>{event.date}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()
               )}
             </div>
           </div>

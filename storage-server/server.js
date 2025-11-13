@@ -96,6 +96,28 @@ async function readDataFile(filename) {
   }
 }
 
+// Sort tasks by period (Morning -> Afternoon -> Evening)
+function sortTasksByPeriod(tasks) {
+  const periodOrder = { 'Morning': 1, 'Afternoon': 2, 'Evening': 3 };
+
+  return tasks.sort((a, b) => {
+    const periodA = a.period || a.time || 'Morning';
+    const periodB = b.period || b.time || 'Morning';
+    const orderA = periodOrder[periodA] || 999;
+    const orderB = periodOrder[periodB] || 999;
+    return orderA - orderB;
+  });
+}
+
+// Sort rewards by cost (smallest to largest)
+function sortRewardsByCost(rewards) {
+  return rewards.sort((a, b) => {
+    const costA = a.cost || 0;
+    const costB = b.cost || 0;
+    return costA - costB;
+  });
+}
+
 async function writeDataFile(filename, data) {
   try {
     // Use web-app/data for users, tasks, and rewards; storage-server/data for everything else
@@ -104,6 +126,18 @@ async function writeDataFile(filename, data) {
 
     // Ensure directory exists
     await fs.mkdir(dataDir, { recursive: true });
+
+    // Sort tasks by period before saving
+    if (filename === 'tasks' && Array.isArray(data)) {
+      data = sortTasksByPeriod(data);
+      console.log(`🔄 Sorted tasks by period (Morning → Afternoon → Evening)`);
+    }
+
+    // Sort rewards by cost before saving
+    if (filename === 'rewards' && Array.isArray(data)) {
+      data = sortRewardsByCost(data);
+      console.log(`🔄 Sorted rewards by cost (smallest → largest)`);
+    }
 
     await fs.writeFile(filePath, JSON.stringify(data, null, 2));
     console.log(`✅ Saved ${filename} to ${filePath}`);

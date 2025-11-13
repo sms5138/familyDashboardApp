@@ -22,7 +22,7 @@
     }
   },
   "backup": {
-    "enabled": true,
+    "enabled": false,
     "description": "Enable automated daily backups",
     "backupTime": "00:00",
     "description_backupTime": "Time of day to perform backup (HH:MM format)",
