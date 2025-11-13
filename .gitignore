@@ -1,30 +1,67 @@
 # Dependencies
 node_modules/
-package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Environment
+# Environment variables
 .env
 .env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# IDE
-.vscode/
-.idea/
-
-# Build
-dist/
-build/
+# Logs
+logs/
 *.log
 
-# Storage data (don't commit personal data)
-storage-server/data/*.json
-storage-server/data/backups/*.json
+# PID files
+*.pid
+.storage-server.pid
+.web-app.pid
 
-# Expo
+# Build outputs
+dist/
+build/
 .expo/
-web-build/
-logs/
+.expo-shared/
+
+# Runtime data
+storage-server/data/*.json
+!storage-server/data/.gitkeep
+
+# Backups
+storage-server/backups/
+*.backup
+*.bak
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# API keys and secrets (keep examples)
 web-app/data/apiDetails.json
+!web-app/data/apiDetails.example.json
+
+# Test files
+coverage/
+.nyc_output/
+
+# Release packages
+family-dashboard-v*.tar.gz
+family-dashboard-v*/
+
+# Cache
+.cache/
+.npm/
+.eslintcache

@@ -4,7 +4,7 @@
     "name": "Make Bed",
     "points": 1,
     "assignedTo": "Nolan",
-    "completed": false,
+    "completed": true,
     "recurrence": [
       "Mon",
       "Tue",
@@ -27,7 +27,7 @@
     ],
     "period": "Morning",
     "id": 1763004997808,
-    "completed": false
+    "completed": true
   },
   {
     "name": "Clean the Garage",
@@ -106,7 +106,7 @@
     ],
     "period": "Morning",
     "id": 1763042072963,
-    "completed": false
+    "completed": true
   },
   {
     "name": "Feed and Water Biscuit in the Evening",
