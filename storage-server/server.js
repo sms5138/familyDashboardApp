@@ -6,7 +6,9 @@ const path = require('path');
 
 const app = express();
 const PORT = 3001;
+// Use web-app/data directory for users.json, storage-server/data for other data
 const DATA_DIR = path.join(__dirname, 'data');
+const WEB_APP_DATA_DIR = path.join(__dirname, '..', 'web-app', 'data');
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -17,6 +19,14 @@ async function ensureDataDir() {
   } catch {
     await fs.mkdir(DATA_DIR, { recursive: true });
     console.log('Created data directory:', DATA_DIR);
+  }
+
+  // Also ensure web-app/data directory exists
+  try {
+    await fs.access(WEB_APP_DATA_DIR);
+  } catch {
+    await fs.mkdir(WEB_APP_DATA_DIR, { recursive: true });
+    console.log('Created web-app data directory:', WEB_APP_DATA_DIR);
   }
 }
 
@@ -29,6 +39,13 @@ async function initializeDataFiles() {
       { id: 1, name: 'Ice Cream', cost: 5 },
       { id: 2, name: 'Movie Night', cost: 10 },
     ],
+    users: {
+      users: [
+        { name: 'Nolan', type: 'Child', points: 3 },
+        { name: 'Mom', type: 'Parent', points: 0 },
+        { name: 'Dad', type: 'Parent', points: 0 }
+      ]
+    },
     userPoints: {
       Nolan: 3,
       Mom: 12,
@@ -52,7 +69,9 @@ async function initializeDataFiles() {
 
 async function readDataFile(filename) {
   try {
-    const filePath = path.join(DATA_DIR, `${filename}.json`);
+    // Use web-app/data for users and tasks, storage-server/data for everything else
+    const dataDir = (filename === 'users' || filename === 'tasks') ? WEB_APP_DATA_DIR : DATA_DIR;
+    const filePath = path.join(dataDir, `${filename}.json`);
     const data = await fs.readFile(filePath, 'utf8');
     return JSON.parse(data);
   } catch (error) {
@@ -63,8 +82,15 @@ async function readDataFile(filename) {
 
 async function writeDataFile(filename, data) {
   try {
-    const filePath = path.join(DATA_DIR, `${filename}.json`);
+    // Use web-app/data for users and tasks, storage-server/data for everything else
+    const dataDir = (filename === 'users' || filename === 'tasks') ? WEB_APP_DATA_DIR : DATA_DIR;
+    const filePath = path.join(dataDir, `${filename}.json`);
+
+    // Ensure directory exists
+    await fs.mkdir(dataDir, { recursive: true });
+
     await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+    console.log(`✅ Saved ${filename} to ${filePath}`);
     return true;
   } catch (error) {
     console.error(`Error writing ${filename}:`, error);

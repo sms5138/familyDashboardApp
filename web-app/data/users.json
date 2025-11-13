@@ -1,0 +1,19 @@
+{
+  "users": [
+    {
+      "name": "Nolan",
+      "type": "Child",
+      "points": 84
+    },
+    {
+      "name": "Mom",
+      "type": "Parent",
+      "points": 0
+    },
+    {
+      "name": "Dad",
+      "type": "Parent",
+      "points": 0
+    }
+  ]
+}

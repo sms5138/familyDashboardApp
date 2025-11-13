@@ -26,3 +26,4 @@ storage-server/data/backups/*.json
 # Expo
 .expo/
 web-build/
+logs/
