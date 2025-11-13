@@ -20,5 +20,13 @@
       "displayLimit": 4,
       "description": "Maximum number of users to show before scrolling"
     }
+  },
+  "backup": {
+    "enabled": true,
+    "description": "Enable automated daily backups",
+    "backupTime": "00:00",
+    "description_backupTime": "Time of day to perform backup (HH:MM format)",
+    "maxBackups": 2,
+    "description_maxBackups": "Maximum number of recent backups to keep"
   }
 }

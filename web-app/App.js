@@ -2089,6 +2089,155 @@ const FamilyDashboard = () => {
               </div>
             ))}
           </div>
+
+          {/* Backup Settings */}
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl mt-6`}>
+            <h2 className="text-2xl font-bold mb-6">Backup Settings</h2>
+            <p className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-6`}>
+              Configure automatic daily backups of your data. Backups are stored as zip files.
+            </p>
+
+            {/* Enable/Disable Backups */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>
+                Enable Automatic Backups:
+              </label>
+              <button
+                onClick={async () => {
+                  const updated = {
+                    ...experienceSettings,
+                    backup: {
+                      ...experienceSettings.backup,
+                      enabled: !experienceSettings.backup.enabled
+                    }
+                  };
+                  setExperienceSettings(updated);
+                  await saveExperienceSettings(updated);
+                }}
+                className={`px-6 py-3 rounded-lg font-medium transition ${
+                  experienceSettings.backup?.enabled
+                    ? `${currentAccent.bg} text-white`
+                    : themeMode === 'light' ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-white/10 hover:bg-white/20'
+                }`}
+              >
+                {experienceSettings.backup?.enabled ? '✓ Enabled' : 'Disabled'}
+              </button>
+            </div>
+
+            {/* Backup Time */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>
+                Backup Time (HH:MM):
+              </label>
+              <input
+                type="time"
+                value={experienceSettings.backup?.backupTime || '00:00'}
+                onChange={async (e) => {
+                  const updated = {
+                    ...experienceSettings,
+                    backup: {
+                      ...experienceSettings.backup,
+                      backupTime: e.target.value
+                    }
+                  };
+                  setExperienceSettings(updated);
+                  await saveExperienceSettings(updated);
+                }}
+                className={`px-4 py-3 rounded-lg w-full ${themeMode === 'light' ? 'bg-gray-200 text-gray-900' : 'bg-white/10 text-white'} border ${themeMode === 'light' ? 'border-gray-300' : 'border-white/20'} focus:outline-none focus:ring-2 ${currentAccent.ring}`}
+              />
+              <p className={`text-xs ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-500'} mt-2`}>
+                Backup will run daily at this time (server timezone)
+              </p>
+            </div>
+
+            {/* Max Backups */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>
+                Keep Most Recent Backups: {experienceSettings.backup?.maxBackups || 2}
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={experienceSettings.backup?.maxBackups || 2}
+                onChange={async (e) => {
+                  const value = parseInt(e.target.value);
+                  const updated = {
+                    ...experienceSettings,
+                    backup: {
+                      ...experienceSettings.backup,
+                      maxBackups: value
+                    }
+                  };
+                  setExperienceSettings(updated);
+                  await saveExperienceSettings(updated);
+                }}
+                className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, var(--accent-color) 0%, var(--accent-color) ${((experienceSettings.backup?.maxBackups || 2) - 1) / 9 * 100}%, ${themeMode === 'light' ? '#e5e7eb' : '#ffffff20'} ${((experienceSettings.backup?.maxBackups || 2) - 1) / 9 * 100}%, ${themeMode === 'light' ? '#e5e7eb' : '#ffffff20'} 100%)`
+                }}
+              />
+              <p className={`text-xs ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-500'} mt-2`}>
+                Older backups will be automatically deleted
+              </p>
+            </div>
+
+            {/* Manual Backup Button */}
+            <div className="mb-6">
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await fetch('http://localhost:3001/api/backup', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ maxBackups: experienceSettings.backup?.maxBackups || 2 })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                      alert(`✅ Backup created: ${data.filename}`);
+                    } else {
+                      alert(`❌ Backup failed: ${data.error}`);
+                    }
+                  } catch (error) {
+                    alert(`❌ Error: ${error.message}`);
+                  }
+                }}
+                className={`${currentAccent.bg} ${currentAccent.hover} px-6 py-3 rounded-lg text-white font-medium transition`}
+              >
+                Create Backup Now
+              </button>
+            </div>
+
+            {/* Backup List */}
+            <div>
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>
+                Recent Backups:
+              </label>
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await fetch('http://localhost:3001/api/backups');
+                    const data = await response.json();
+                    if (data.success) {
+                      if (data.backups.length === 0) {
+                        alert('No backups found');
+                      } else {
+                        const backupList = data.backups
+                          .map(b => `${b.filename} (${(b.size / 1024 / 1024).toFixed(2)} MB) - ${new Date(b.created).toLocaleString()}`)
+                          .join('\n');
+                        alert(`Backups:\n\n${backupList}`);
+                      }
+                    }
+                  } catch (error) {
+                    alert(`Error: ${error.message}`);
+                  }
+                }}
+                className={`${themeMode === 'light' ? 'bg-gray-200 hover:bg-gray-300 text-gray-700' : 'bg-white/10 hover:bg-white/20 text-white'} px-4 py-2 rounded-lg text-sm transition`}
+              >
+                View Backups
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );

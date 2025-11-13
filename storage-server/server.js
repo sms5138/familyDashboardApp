@@ -2,7 +2,9 @@
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
+const archiver = require('archiver');
 
 const app = express();
 const PORT = 3001;
@@ -10,6 +12,10 @@ const PORT = 3001;
 const DATA_DIR = path.join(__dirname, 'data');
 const WEB_APP_DATA_DIR = path.join(__dirname, '..', 'web-app', 'data');
 const PHOTOS_DIR = path.join(WEB_APP_DATA_DIR, 'photos');
+const BACKUPS_DIR = path.join(WEB_APP_DATA_DIR, 'backups');
+
+// Backup scheduler state
+let backupScheduler = null;
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -105,6 +111,115 @@ async function writeDataFile(filename, data) {
   } catch (error) {
     console.error(`Error writing ${filename}:`, error);
     return false;
+  }
+}
+
+// Backup utility functions
+async function createBackupZip(maxBackups = 2) {
+  try {
+    // Ensure backups directory exists
+    await fs.mkdir(BACKUPS_DIR, { recursive: true });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const backupFileName = `backup-${timestamp}.zip`;
+    const backupPath = path.join(BACKUPS_DIR, backupFileName);
+
+    // Create a write stream for the zip file
+    const output = fsSync.createWriteStream(backupPath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    return new Promise(async (resolve, reject) => {
+      output.on('close', async () => {
+        console.log(`✅ Backup created: ${backupFileName} (${archive.pointer()} bytes)`);
+
+        // Clean up old backups, keeping only the most recent maxBackups
+        try {
+          const files = await fs.readdir(BACKUPS_DIR);
+          const backupFiles = files
+            .filter(f => f.startsWith('backup-') && f.endsWith('.zip'))
+            .sort()
+            .reverse();
+
+          if (backupFiles.length > maxBackups) {
+            const filesToDelete = backupFiles.slice(maxBackups);
+            for (const file of filesToDelete) {
+              await fs.unlink(path.join(BACKUPS_DIR, file));
+              console.log(`🗑️  Deleted old backup: ${file}`);
+            }
+          }
+        } catch (err) {
+          console.error('Error cleaning up old backups:', err);
+        }
+
+        resolve({ success: true, filename: backupFileName, path: backupPath });
+      });
+
+      archive.on('error', (err) => {
+        reject(err);
+      });
+
+      archive.pipe(output);
+
+      // Add files from web-app/data directory, excluding the backups folder to avoid infinite loops
+      const addFilesRecursive = async (dir, baseDir, archivePath) => {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          const archiveFilePath = path.join(archivePath, entry.name);
+
+          // Skip the backups directory to prevent including itself
+          if (entry.name === 'backups') {
+            continue;
+          }
+
+          if (entry.isDirectory()) {
+            await addFilesRecursive(fullPath, baseDir, archiveFilePath);
+          } else {
+            archive.file(fullPath, { name: archiveFilePath });
+          }
+        }
+      };
+
+      try {
+        await addFilesRecursive(WEB_APP_DATA_DIR, WEB_APP_DATA_DIR, 'data');
+        archive.finalize();
+      } catch (err) {
+        reject(err);
+      }
+    });
+  } catch (error) {
+    console.error('Error creating backup:', error);
+    throw error;
+  }
+}
+
+async function getBackupList() {
+  try {
+    await fs.mkdir(BACKUPS_DIR, { recursive: true });
+    const files = await fs.readdir(BACKUPS_DIR);
+    const backupFiles = files
+      .filter(f => f.startsWith('backup-') && f.endsWith('.zip'))
+      .sort()
+      .reverse();
+
+    const backupList = await Promise.all(
+      backupFiles.map(async (file) => {
+        const filePath = path.join(BACKUPS_DIR, file);
+        const stats = await fs.stat(filePath);
+        const timestamp = file.replace('backup-', '').replace('.zip', '');
+        return {
+          filename: file,
+          size: stats.size,
+          created: stats.mtime.toISOString(),
+          timestamp
+        };
+      })
+    );
+
+    return backupList;
+  } catch (error) {
+    console.error('Error listing backups:', error);
+    return [];
   }
 }
 
@@ -320,11 +435,76 @@ app.post('/api/experience', async (req, res) => {
   }
 });
 
+// IMPORTANT: Backup endpoints MUST come before the generic /api/:type handlers
+// Create a new backup immediately
+app.post('/api/backup', async (req, res) => {
+  try {
+    const maxBackups = req.body.maxBackups || 2;
+    const result = await createBackupZip(maxBackups);
+    res.json({ success: true, message: 'Backup created', ...result });
+  } catch (error) {
+    console.error('Backup error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get list of existing backups
+app.get('/api/backups', async (req, res) => {
+  try {
+    const backups = await getBackupList();
+    res.json({ success: true, backups });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Download a specific backup
+app.get('/api/backups/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filePath = path.join(BACKUPS_DIR, filename);
+
+    // Security: ensure the file is actually in the backups directory
+    const resolvedPath = path.resolve(filePath);
+    const resolvedBackupsDir = path.resolve(BACKUPS_DIR);
+
+    if (!resolvedPath.startsWith(resolvedBackupsDir)) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    res.download(filePath, filename);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete a specific backup
+app.delete('/api/backups/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filePath = path.join(BACKUPS_DIR, filename);
+
+    // Security: ensure the file is actually in the backups directory
+    const resolvedPath = path.resolve(filePath);
+    const resolvedBackupsDir = path.resolve(BACKUPS_DIR);
+
+    if (!resolvedPath.startsWith(resolvedBackupsDir)) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    await fs.unlink(filePath);
+    res.json({ success: true, message: `Backup deleted: ${filename}` });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Generic handlers MUST come after specific paths
 app.get('/api/:type', async (req, res) => {
   try {
     const { type } = req.params;
     const data = await readDataFile(type);
-    
+
     if (data === null) {
       return res.status(404).json({ success: false, error: 'Data not found' });
     }
@@ -345,7 +525,7 @@ app.post('/api/:type', async (req, res) => {
     }
 
     const success = await writeDataFile(type, data);
-    
+
     if (success) {
       res.json({ success: true, message: `${type} updated successfully` });
     } else {
@@ -356,32 +536,72 @@ app.post('/api/:type', async (req, res) => {
   }
 });
 
-app.post('/api/backup', async (req, res) => {
+// Initialize daily backup scheduler
+async function initializeBackupScheduler() {
   try {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupDir = path.join(DATA_DIR, 'backups');
+    // Load experience settings to get backup configuration
+    const experienceFilePath = path.join(WEB_APP_DATA_DIR, 'experience.json');
+    let backupSettings = {
+      enabled: true,
+      backupTime: '00:00',
+      maxBackups: 2
+    };
 
-    await fs.mkdir(backupDir, { recursive: true });
+    try {
+      const experienceData = JSON.parse(await fs.readFile(experienceFilePath, 'utf8'));
+      if (experienceData.backup) {
+        backupSettings = { ...backupSettings, ...experienceData.backup };
+      }
+    } catch (err) {
+      console.log('Using default backup settings');
+    }
 
-    const tasks = await readDataFile('tasks');
-    const rewards = await readDataFile('rewards');
-    const userPoints = await readDataFile('userPoints');
+    if (!backupSettings.enabled) {
+      console.log('⏸️  Backup scheduler is disabled');
+      return;
+    }
 
-    const backup = { tasks, rewards, userPoints, timestamp };
-    const backupPath = path.join(backupDir, `backup-${timestamp}.json`);
+    // Schedule daily backup
+    const scheduleNextBackup = () => {
+      const [hour, minute] = backupSettings.backupTime.split(':').map(Number);
+      const now = new Date();
+      const scheduledTime = new Date();
+      scheduledTime.setHours(hour, minute, 0, 0);
 
-    await fs.writeFile(backupPath, JSON.stringify(backup, null, 2));
+      // If the scheduled time has already passed today, schedule for tomorrow
+      if (scheduledTime < now) {
+        scheduledTime.setDate(scheduledTime.getDate() + 1);
+      }
 
-    res.json({ success: true, message: 'Backup created', filename: `backup-${timestamp}.json` });
+      const msUntilBackup = scheduledTime - now;
+
+      console.log(`⏰ Next backup scheduled at ${scheduledTime.toLocaleString()}`);
+
+      backupScheduler = setTimeout(async () => {
+        try {
+          console.log('⏳ Starting scheduled backup...');
+          await createBackupZip(backupSettings.maxBackups);
+          console.log('✅ Scheduled backup completed');
+        } catch (error) {
+          console.error('❌ Scheduled backup failed:', error);
+        }
+
+        // Schedule the next backup
+        scheduleNextBackup();
+      }, msUntilBackup);
+    };
+
+    scheduleNextBackup();
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Failed to initialize backup scheduler:', error);
   }
-});
+}
 
 async function startServer() {
   try {
     await ensureDataDir();
     await initializeDataFiles();
+    await initializeBackupScheduler();
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log('===========================================');
