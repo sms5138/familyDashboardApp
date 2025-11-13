@@ -60,6 +60,7 @@ const FamilyDashboard = () => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [lastActivityTime, setLastActivityTime] = useState(Date.now());
   const [showHockeyAnimation, setShowHockeyAnimation] = useState(false);
+  const [clockCorner, setClockCorner] = useState('bottom-left');
   const [newTask, setNewTask] = useState({
     name: '',
     points: 1,
@@ -256,14 +257,22 @@ const FamilyDashboard = () => {
 
   // Screensaver image rotation
   useEffect(() => {
-    if (screensaverActive && screensaverImages.length > 0) {
+    if ((screensaverActive || showScreensaverPreview) && screensaverImages.length > 0) {
       const interval = setInterval(() => {
         setCurrentImageIndex((prev) => (prev + 1) % screensaverImages.length);
       }, screensaverDuration * 1000);
 
       return () => clearInterval(interval);
     }
-  }, [screensaverActive, screensaverImages, screensaverDuration]);
+  }, [screensaverActive, showScreensaverPreview, screensaverImages, screensaverDuration]);
+
+  // Rotate clock position on image change
+  useEffect(() => {
+    if (screensaverActive || showScreensaverPreview) {
+      const corners = ['bottom-left', 'bottom-right', 'top-left', 'top-right'];
+      setClockCorner(corners[currentImageIndex % corners.length]);
+    }
+  }, [currentImageIndex, screensaverActive, showScreensaverPreview]);
 
   // Google OAuth login configuration
   const handleGoogleLogin = useGoogleLogin({
@@ -2374,7 +2383,8 @@ const FamilyDashboard = () => {
       )}
 
       <div className="max-w-7xl mx-auto w-full">
-        {/* Settings and Power Icons */}
+        {/* Settings and Power Icons - Hidden when screensaver is actually running */}
+        {!(screensaverActive || showScreensaverPreview) && (
         <div className="absolute top-6 right-6 z-[201] flex gap-3">
           <button
             onClick={() => {
@@ -2394,6 +2404,7 @@ const FamilyDashboard = () => {
             <Settings className={currentAccent.text} size={28} />
           </button>
         </div>
+        )}
 
         {/* Time and Weather Section */}
         <div className={`text-center mb-8 ${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-3xl p-8 shadow-2xl`}>
@@ -3147,9 +3158,14 @@ const FamilyDashboard = () => {
             </div>
           ))}
 
-          {/* Weather/Time/Date Overlay */}
+          {/* Weather/Time/Date Overlay - Rotates to different corners */}
           <div
-            className="absolute bottom-6 left-6 bg-black/50 backdrop-blur-md rounded-2xl p-6 text-white z-10 cursor-pointer"
+            className={`absolute ${
+              clockCorner === 'bottom-left' ? 'bottom-6 left-6' :
+              clockCorner === 'bottom-right' ? 'bottom-6 right-6' :
+              clockCorner === 'top-left' ? 'top-6 left-6' :
+              'top-6 right-6'
+            } bg-black/50 backdrop-blur-md rounded-2xl p-6 text-white z-10 cursor-pointer transition-all duration-500`}
             onClick={(e) => {
               e.stopPropagation();
               setScreensaverActive(false);
@@ -3172,19 +3188,7 @@ const FamilyDashboard = () => {
             </div>
           </div>
 
-          {/* Close button for preview mode */}
-          {showScreensaverPreview && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowScreensaverPreview(false);
-                setCurrentImageIndex(0);
-              }}
-              className={`absolute top-6 right-6 ${themeMode === 'light' ? 'bg-white/70 hover:bg-white/90' : 'bg-white/10 hover:bg-white/20'} backdrop-blur-lg p-3 rounded-full transition shadow-lg z-10`}
-            >
-              <X size={28} className={currentAccent.text} />
-            </button>
-          )}
+          {/* Close button for preview mode - Hidden */}
         </div>
       )}
     </div>
