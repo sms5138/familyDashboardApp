@@ -59,6 +59,7 @@ const FamilyDashboard = () => {
   const [showScreensaverPreview, setShowScreensaverPreview] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [lastActivityTime, setLastActivityTime] = useState(Date.now());
+  const [showHockeyAnimation, setShowHockeyAnimation] = useState(false);
   const [newTask, setNewTask] = useState({
     name: '',
     points: 1,
@@ -1093,6 +1094,12 @@ const FamilyDashboard = () => {
 
     // Update and save user points
     await updateUserPoints(task.assignedTo, newPoints);
+
+    // Trigger hockey celebration when task is completed
+    if (newCompleted) {
+      setShowHockeyAnimation(true);
+      setTimeout(() => setShowHockeyAnimation(false), 4500);
+    }
   };
 
   const redeemReward = async (reward, userName) => {
@@ -2245,6 +2252,127 @@ const FamilyDashboard = () => {
 
   return (
     <div className={`min-h-screen w-full ${themeMode === 'light' ? 'bg-gradient-to-br from-slate-100 via-gray-100 to-slate-100 text-gray-900' : 'bg-gradient-to-br from-gray-950 via-slate-950 to-gray-950 text-white'} p-4 md:p-6 overflow-x-hidden`}>
+      {/* Hockey Goal Animation */}
+      {showHockeyAnimation && (
+        <div className="fixed inset-0 z-[999] pointer-events-none overflow-hidden">
+          {/* Ice rink background */}
+          <div className="absolute inset-0 bg-gradient-to-b from-blue-900/30 via-blue-800/20 to-blue-900/30"></div>
+
+          {/* Hockey Player */}
+          <div
+            className="absolute bottom-20 left-1/3 text-6xl"
+            style={{
+              animation: 'slideRight 2s ease-out forwards'
+            }}
+          >
+            🏒
+          </div>
+
+          {/* Hockey Puck */}
+          <div
+            className="absolute bottom-24 left-1/3 text-4xl"
+            style={{
+              animation: 'shootPuck 2s ease-out forwards'
+            }}
+          >
+            ⚫
+          </div>
+
+          {/* Hockey Goalie */}
+          <div className="absolute bottom-20 right-1/3 text-6xl opacity-70">
+            🥅
+          </div>
+
+          {/* Goal Celebration Text */}
+          <div
+            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center"
+            style={{
+              animation: 'popUp 3s ease-out forwards'
+            }}
+          >
+            <div className="text-6xl font-black text-white drop-shadow-2xl" style={{
+              textShadow: '0 0 20px rgba(255, 215, 0, 0.8), 0 0 40px rgba(255, 0, 0, 0.6)'
+            }}>
+              HE SHOOTS!
+            </div>
+            <div
+              className="text-7xl font-black text-yellow-300 drop-shadow-2xl mt-4"
+              style={{
+                animation: 'pulse 0.5s ease-in-out 2s infinite',
+                textShadow: '0 0 20px rgba(255, 215, 0, 0.9), 0 0 40px rgba(255, 165, 0, 0.7)'
+              }}
+            >
+              HE SCORES!
+            </div>
+          </div>
+
+          {/* Confetti */}
+          {[...Array(20)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute text-2xl"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animation: `fall ${2 + Math.random() * 2}s linear forwards`,
+                animationDelay: `${Math.random() * 0.5}s`
+              }}
+            >
+              {['🎉', '⭐', '✨', '🏆'][i % 4]}
+            </div>
+          ))}
+
+          <style>{`
+            @keyframes slideRight {
+              from {
+                transform: translateX(-500px);
+                opacity: 1;
+              }
+              to {
+                transform: translateX(400px);
+                opacity: 1;
+              }
+            }
+
+            @keyframes shootPuck {
+              from {
+                transform: translateX(-500px) translateY(0);
+                opacity: 1;
+              }
+              to {
+                transform: translateX(600px) translateY(-200px);
+                opacity: 0;
+              }
+            }
+
+            @keyframes popUp {
+              0% {
+                transform: translate(-50%, -50%) scale(0);
+                opacity: 0;
+              }
+              20% {
+                transform: translate(-50%, -50%) scale(1.2);
+                opacity: 1;
+              }
+              80% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+              }
+              100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 0;
+              }
+            }
+
+            @keyframes fall {
+              to {
+                transform: translateY(100vh) rotate(360deg);
+                opacity: 0;
+              }
+            }
+          `}</style>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto w-full">
         {/* Settings and Power Icons */}
         <div className="absolute top-6 right-6 z-[201] flex gap-3">
