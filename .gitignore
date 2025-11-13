@@ -27,3 +27,4 @@ storage-server/data/backups/*.json
 .expo/
 web-build/
 logs/
+web-app/data/apiDetails.json

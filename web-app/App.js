@@ -3,14 +3,16 @@ import { Bell, Plus, X, Calendar, Sun, Award, CheckCircle, Circle, Users, Settin
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import './global.css';
 
-// Google Calendar API Configuration
-const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_API_KEY || 'NotFound';
-const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || 'NotFound.apps.googleusercontent.com';
-const CALENDAR_IDS = (process.env.REACT_APP_CALENDAR_IDS || 'primary,amandap.sawyer@gmail.com').split(',');
+// API URL for backend communication
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+
+// Default values - will be overridden by apiDetails.json
+let GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_API_KEY || 'NotFound';
+let GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || 'NotFound.apps.googleusercontent.com';
+let CALENDAR_IDS = (process.env.REACT_APP_CALENDAR_IDS || 'primary,amandap.sawyer@gmail.com').split(',');
 const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Weekend'];
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 const FamilyDashboard = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -66,9 +68,30 @@ const FamilyDashboard = () => {
   });
   const [newReward, setNewReward] = useState({ name: '', cost: 5 });
 
+  // API configuration state
+  const [googleApiKey, setGoogleApiKey] = useState(GOOGLE_API_KEY);
+  const [googleClientId, setGoogleClientId] = useState(GOOGLE_CLIENT_ID);
+  const [calendarIds, setCalendarIds] = useState(CALENDAR_IDS);
+
+  // Experience/UX settings state
+  const [experienceSettings, setExperienceSettings] = useState({
+    modules: {
+      calendar: { displayLimit: 5 },
+      tasks: { displayLimit: 5 },
+      rewards: { displayLimit: 4 },
+      users: { displayLimit: 5 }
+    }
+  });
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Load API configuration and all settings
+  useEffect(() => {
+    loadApiDetails();
+    loadExperienceSettings();
   }, []);
 
   // Load users, tasks, rewards, and settings from API
@@ -227,6 +250,56 @@ const FamilyDashboard = () => {
       console.error('Error:', error);
     }
   });
+
+  // Load API configuration from server
+  const loadApiDetails = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/api-details`);
+      const result = await response.json();
+      if (result.success && result.data?.googleCalendar) {
+        const config = result.data.googleCalendar;
+        setGoogleApiKey(config.apiKey);
+        setGoogleClientId(config.clientId);
+        setCalendarIds(config.calendarIds.split(',').map(id => id.trim()));
+        // Update module-level variables
+        GOOGLE_API_KEY = config.apiKey;
+        GOOGLE_CLIENT_ID = config.clientId;
+        CALENDAR_IDS = config.calendarIds.split(',').map(id => id.trim());
+      }
+    } catch (error) {
+      console.error('Error loading API details:', error);
+      // Falls back to environment variables or defaults
+    }
+  };
+
+  // Load experience/UX settings
+  const loadExperienceSettings = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/experience`);
+      const result = await response.json();
+      if (result.success && result.data) {
+        setExperienceSettings(result.data);
+      }
+    } catch (error) {
+      console.error('Error loading experience settings:', error);
+      // Falls back to default values
+    }
+  };
+
+  // Save experience/UX settings
+  const saveExperienceSettings = async (settings) => {
+    try {
+      await fetch(`${API_URL}/api/experience`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(settings),
+      });
+    } catch (error) {
+      console.error('Error saving experience settings:', error);
+    }
+  };
 
   const loadUsers = async () => {
     try {
@@ -507,7 +580,7 @@ const FamilyDashboard = () => {
     }
   }, []);
 
-  // Load calendar events when access token changes
+  // Load calendar events when access token, API config, or experience settings change
   useEffect(() => {
     if (accessToken) {
       loadCalendarEvents();
@@ -516,7 +589,7 @@ const FamilyDashboard = () => {
       setCalendarError(null);
       setCalendarEvents([]);
     }
-  }, [accessToken]);
+  }, [accessToken, calendarIds, googleApiKey, experienceSettings]);
 
   const handleSignoutClick = () => {
     setAccessToken(null);
@@ -529,7 +602,7 @@ const FamilyDashboard = () => {
     try {
       console.log('=== LOADING CALENDAR EVENTS ===');
       console.log('Access Token:', accessToken ? '✓ Present' : '✗ Missing');
-      console.log('Calendar IDs:', CALENDAR_IDS);
+      console.log('Calendar IDs:', calendarIds);
 
       setCalendarLoading(true);
       setCalendarError(null);
@@ -542,16 +615,17 @@ const FamilyDashboard = () => {
       console.log('Date range:', now.toISOString(), 'to', endDate.toISOString());
 
       let allEvents = [];
+      const calendarColors = experienceSettings.modules.calendar.calendarColors || {}; // Get colors from experience settings
 
       // Fetch events from each calendar ID using REST API
-      for (const calendarId of CALENDAR_IDS) {
+      for (const calendarId of calendarIds) {
         try {
           console.log(`Fetching events for calendar: ${calendarId}`);
 
           const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId.trim())}/events?` +
             `timeMin=${encodeURIComponent(now.toISOString())}&` +
             `timeMax=${encodeURIComponent(endDate.toISOString())}&` +
-            `showDeleted=false&singleEvents=true&orderBy=startTime&key=${GOOGLE_API_KEY}`;
+            `showDeleted=false&singleEvents=true&orderBy=startTime&key=${googleApiKey}`;
 
           console.log('Calendar API URL:', url.substring(0, 100) + '...');
 
@@ -575,7 +649,8 @@ const FamilyDashboard = () => {
 
           allEvents = allEvents.concat(events.map(event => ({
             ...event,
-            calendarId: calendarId.trim()
+            calendarId: calendarId.trim(),
+            calendarColor: calendarColors[calendarId.trim()] || '#14b8a6' // Use color from experience settings or default to teal
           })));
         } catch (error) {
           console.error(`Error fetching events from calendar ${calendarId}:`, error);
@@ -615,12 +690,8 @@ const FamilyDashboard = () => {
             day: 'numeric'
           });
 
-          // Assign colors based on calendar
-          const colors = ['#10b981', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b'];
-          const calendarIndex = CALENDAR_IDS.indexOf(event.calendarId);
-          const color = event.colorId
-            ? `#${event.colorId}`
-            : colors[calendarIndex % colors.length];
+          // Assign colors from experience settings
+          const color = event.calendarColor || '#14b8a6'; // Default teal if no color found
 
           return {
             id: event.id,
@@ -659,6 +730,14 @@ const FamilyDashboard = () => {
     // Check if today is in the recurrence array
     return task.recurrence.includes(today);
   };
+
+  // Compute filtered tasks based on current filters
+  const filteredTasks = tasks
+    .filter(isTaskForToday)
+    .filter(task => selectedPeriods.includes(task.period || task.time || 'Morning'));
+
+  // Compute displayed users based on hideParents filter
+  const displayedUsers = users.filter(user => !hideParents || user.type !== 'Parent');
 
   // Helper function to toggle period filter
   const togglePeriod = (period) => {
@@ -1314,6 +1393,256 @@ const FamilyDashboard = () => {
               Preview Screensaver
             </button>
           </div>
+
+          {/* API Details Settings */}
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl mb-6`}>
+            <h2 className="text-2xl font-bold mb-6">API Configuration</h2>
+            <p className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-6`}>
+              Configure Google Calendar API credentials.
+            </p>
+
+            {/* Google API Key */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Google API Key:
+              </label>
+              <input
+                type="text"
+                value={googleApiKey}
+                onChange={(e) => setGoogleApiKey(e.target.value)}
+                placeholder="Enter your Google API Key"
+                className={`w-full ${themeMode === 'light' ? 'bg-gray-200 text-gray-900' : 'bg-white/10 text-white'} p-3 rounded-lg mb-2`}
+              />
+              <p className={`text-xs ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-500'}`}>
+                Found in Google Cloud Console
+              </p>
+            </div>
+
+            {/* Google Client ID */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Google Client ID:
+              </label>
+              <input
+                type="text"
+                value={googleClientId}
+                onChange={(e) => setGoogleClientId(e.target.value)}
+                placeholder="Enter your Google Client ID"
+                className={`w-full ${themeMode === 'light' ? 'bg-gray-200 text-gray-900' : 'bg-white/10 text-white'} p-3 rounded-lg mb-2`}
+              />
+              <p className={`text-xs ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-500'}`}>
+                OAuth 2.0 Client ID from Google Cloud Console
+              </p>
+            </div>
+
+            {/* Calendar IDs */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Calendar IDs (comma-separated):
+              </label>
+              <input
+                type="text"
+                value={calendarIds.join(', ')}
+                onChange={(e) => setCalendarIds(e.target.value.split(',').map(id => id.trim()))}
+                placeholder="e.g., primary, email@gmail.com"
+                className={`w-full ${themeMode === 'light' ? 'bg-gray-200 text-gray-900' : 'bg-white/10 text-white'} p-3 rounded-lg mb-2`}
+              />
+              <p className={`text-xs ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-500'}`}>
+                Use 'primary' for your main calendar or add additional calendar IDs separated by commas
+              </p>
+            </div>
+
+            {/* Save API Details Button */}
+            <button
+              onClick={async () => {
+                await saveExperienceSettings(experienceSettings);
+                // Also save API details
+                const apiDetails = {
+                  googleCalendar: {
+                    apiKey: googleApiKey,
+                    clientId: googleClientId,
+                    calendarIds: calendarIds.join(',')
+                  }
+                };
+                try {
+                  await fetch(`${API_URL}/api/api-details`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(apiDetails),
+                  });
+                  // Update module-level variables
+                  GOOGLE_API_KEY = googleApiKey;
+                  GOOGLE_CLIENT_ID = googleClientId;
+                  CALENDAR_IDS = calendarIds;
+                  alert('API configuration saved successfully!');
+                } catch (error) {
+                  console.error('Error saving API details:', error);
+                  alert('Error saving API configuration');
+                }
+              }}
+              className={`w-full ${currentAccent.bg} ${currentAccent.hover} py-3 rounded-lg font-bold transition text-white`}
+            >
+              Save API Configuration
+            </button>
+          </div>
+
+          {/* Experience/UX Settings */}
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
+            <h2 className="text-2xl font-bold mb-6">Display Limits</h2>
+            <p className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-6`}>
+              Set the maximum number of items to display in each module before scrolling is enabled.
+            </p>
+
+            {/* Calendar Display Limit */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>
+                Calendar Events: {experienceSettings.modules.calendar.displayLimit} items
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                value={experienceSettings.modules.calendar.displayLimit}
+                onChange={async (e) => {
+                  const value = parseInt(e.target.value) || 5;
+                  const updated = {
+                    ...experienceSettings,
+                    modules: {
+                      ...experienceSettings.modules,
+                      calendar: { ...experienceSettings.modules.calendar, displayLimit: value }
+                    }
+                  };
+                  setExperienceSettings(updated);
+                  await saveExperienceSettings(updated);
+                }}
+                className="w-full"
+              />
+            </div>
+
+            {/* Tasks Display Limit */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>
+                Tasks: {experienceSettings.modules.tasks.displayLimit} items
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                value={experienceSettings.modules.tasks.displayLimit}
+                onChange={async (e) => {
+                  const value = parseInt(e.target.value) || 5;
+                  const updated = {
+                    ...experienceSettings,
+                    modules: {
+                      ...experienceSettings.modules,
+                      tasks: { ...experienceSettings.modules.tasks, displayLimit: value }
+                    }
+                  };
+                  setExperienceSettings(updated);
+                  await saveExperienceSettings(updated);
+                }}
+                className="w-full"
+              />
+            </div>
+
+            {/* Rewards Display Limit */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>
+                Rewards: {experienceSettings.modules.rewards.displayLimit} items
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                value={experienceSettings.modules.rewards.displayLimit}
+                onChange={async (e) => {
+                  const value = parseInt(e.target.value) || 4;
+                  const updated = {
+                    ...experienceSettings,
+                    modules: {
+                      ...experienceSettings.modules,
+                      rewards: { ...experienceSettings.modules.rewards, displayLimit: value }
+                    }
+                  };
+                  setExperienceSettings(updated);
+                  await saveExperienceSettings(updated);
+                }}
+                className="w-full"
+              />
+            </div>
+
+            {/* Users Display Limit */}
+            <div>
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>
+                Users: {experienceSettings.modules.users.displayLimit} items
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                value={experienceSettings.modules.users.displayLimit}
+                onChange={async (e) => {
+                  const value = parseInt(e.target.value) || 5;
+                  const updated = {
+                    ...experienceSettings,
+                    modules: {
+                      ...experienceSettings.modules,
+                      users: { ...experienceSettings.modules.users, displayLimit: value }
+                    }
+                  };
+                  setExperienceSettings(updated);
+                  await saveExperienceSettings(updated);
+                }}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          {/* Calendar Colors Settings */}
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
+            <h2 className="text-2xl font-bold mb-6">Calendar Colors</h2>
+            <p className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-6`}>
+              Set the color for each calendar's events.
+            </p>
+
+            {calendarIds.map((calendarId) => (
+              <div key={calendarId} className="mb-6">
+                <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>
+                  {calendarId === 'primary' ? 'Primary Calendar' : calendarId}:
+                </label>
+                <div className="flex gap-3 items-center">
+                  <input
+                    type="color"
+                    value={experienceSettings.modules.calendar.calendarColors?.[calendarId] || '#14b8a6'}
+                    onChange={async (e) => {
+                      const newColor = e.target.value;
+                      const updated = {
+                        ...experienceSettings,
+                        modules: {
+                          ...experienceSettings.modules,
+                          calendar: {
+                            ...experienceSettings.modules.calendar,
+                            calendarColors: {
+                              ...experienceSettings.modules.calendar.calendarColors,
+                              [calendarId]: newColor
+                            }
+                          }
+                        }
+                      };
+                      setExperienceSettings(updated);
+                      await saveExperienceSettings(updated);
+                    }}
+                    className="w-20 h-10 rounded-lg cursor-pointer"
+                  />
+                  <span className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'}`}>
+                    {experienceSettings.modules.calendar.calendarColors?.[calendarId] || '#14b8a6'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -1323,16 +1652,17 @@ const FamilyDashboard = () => {
     <div className={`min-h-screen w-full ${themeMode === 'light' ? 'bg-gradient-to-br from-slate-100 via-gray-100 to-slate-100 text-gray-900' : 'bg-gradient-to-br from-gray-950 via-slate-950 to-gray-950 text-white'} p-4 md:p-6 overflow-x-hidden`}>
       <div className="max-w-7xl mx-auto w-full">
         {/* Settings and Power Icons */}
-        <div className="absolute top-6 right-6 z-10 flex gap-3">
+        <div className="absolute top-6 right-6 z-[201] flex gap-3">
           <button
             onClick={() => {
               setCurrentImageIndex(0);
-              setScreensaverActive(true);
+              setShowScreensaverPreview(!showScreensaverPreview);
             }}
             disabled={screensaverImages.length === 0}
-            className={`${themeMode === 'light' ? 'bg-white/70 hover:bg-white/90' : 'bg-white/10 hover:bg-white/20'} backdrop-blur-lg p-3 rounded-full transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`${showScreensaverPreview ? currentAccent.bg + ' ' + currentAccent.hover : themeMode === 'light' ? 'bg-white/70 hover:bg-white/90' : 'bg-white/10 hover:bg-white/20'} backdrop-blur-lg p-3 rounded-full transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed`}
+            title={showScreensaverPreview ? 'Exit screensaver' : 'Start screensaver'}
           >
-            <Power className={currentAccent.text} size={28} />
+            <Power className={showScreensaverPreview ? 'text-white' : currentAccent.text} size={28} />
           </button>
           <button
             onClick={() => setShowSettings(true)}
@@ -1415,17 +1745,19 @@ const FamilyDashboard = () => {
                   No upcoming events
                 </div>
               ) : (
-                calendarEvents.map(event => (
-                  <div
-                    key={event.id}
-                    className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl border-l-4`}
-                    style={{ borderLeftColor: event.color }}
-                  >
-                    <div className="font-semibold text-lg">{event.title}</div>
-                    <div className={`${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'} text-sm mt-1`}>{event.time}</div>
-                    <div className={`${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} text-xs mt-1`}>{event.date}</div>
-                  </div>
-                ))
+                <div className={`space-y-3 ${calendarEvents.length > experienceSettings.modules.calendar.displayLimit ? 'overflow-y-auto max-h-96 pr-2' : ''}`}>
+                  {calendarEvents.map(event => (
+                    <div
+                      key={event.id}
+                      className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl border-l-4`}
+                      style={{ borderLeftColor: event.color }}
+                    >
+                      <div className="font-semibold text-lg">{event.title}</div>
+                      <div className={`${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'} text-sm mt-1`}>{event.time}</div>
+                      <div className={`${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} text-xs mt-1`}>{event.date}</div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -1459,8 +1791,8 @@ const FamilyDashboard = () => {
               ))}
             </div>
 
-            <div className="space-y-3">
-              {tasks.filter(isTaskForToday).filter(task => selectedPeriods.includes(task.period || task.time || 'Morning')).map(task => (
+            <div className={`space-y-3 ${filteredTasks.length > experienceSettings.modules.tasks.displayLimit ? 'overflow-y-auto max-h-96 pr-2' : ''}`}>
+              {filteredTasks.map(task => (
                 <div
                   key={task.id}
                   className="bg-white/10 p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:bg-white/15 transition"
@@ -1510,8 +1842,8 @@ const FamilyDashboard = () => {
                 Hide parents
               </label>
             </div>
-            <div className="space-y-3">
-              {users.filter(user => !hideParents || user.type !== 'Parent').map(user => (
+            <div className={`space-y-3 ${displayedUsers.length > experienceSettings.modules.users.displayLimit ? 'overflow-y-auto max-h-96 pr-2' : ''}`}>
+              {displayedUsers.map(user => (
                 <div key={user.name} className="bg-white/10 p-4 rounded-xl flex justify-between items-center">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-full flex items-center justify-center font-bold">
@@ -1542,7 +1874,7 @@ const FamilyDashboard = () => {
                 <Plus size={24} />
               </button>
             </div>
-            <div className="space-y-4">
+            <div className={`space-y-4 ${rewards.length > experienceSettings.modules.rewards.displayLimit ? 'overflow-y-auto max-h-96 pr-2' : ''}`}>
               {rewards.map(reward => (
                 <div key={reward.id} className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl`}>
                   <div className="mb-3">
@@ -1550,7 +1882,7 @@ const FamilyDashboard = () => {
                     <div className="text-yellow-400 text-sm">{reward.cost} points</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {users.filter(user => !hideParents || user.type !== 'Parent').map(user => (
+                    {displayedUsers.map(user => (
                       <button
                         key={user.name}
                         onClick={() => redeemReward(reward, user.name)}
@@ -2053,9 +2385,18 @@ const FamilyDashboard = () => {
         </div>
       )}
 
-      {/* Screensaver */}
+
+      {/* Screensaver Overlay - Must appear above all other content */}
       {(screensaverActive || showScreensaverPreview) && screensaverImages.length > 0 && (
-        <div className="fixed inset-0 bg-black z-[200] flex items-center justify-center">
+        <div
+          className="fixed inset-0 bg-black z-[200] flex items-center justify-center cursor-pointer"
+          onClick={() => {
+            setScreensaverActive(false);
+            setShowScreensaverPreview(false);
+            setLastActivityTime(Date.now());
+            setCurrentImageIndex(0);
+          }}
+        >
           {/* Screensaver Images with Crossfade */}
           {screensaverImages.map((img, index) => (
             <div
@@ -2065,6 +2406,7 @@ const FamilyDashboard = () => {
                 opacity: index === currentImageIndex ? 1 : 0,
                 pointerEvents: 'none'
               }}
+              onClick={(e) => e.stopPropagation()}
             >
               <img
                 src={img}
@@ -2075,7 +2417,16 @@ const FamilyDashboard = () => {
           ))}
 
           {/* Weather/Time/Date Overlay */}
-          <div className="absolute bottom-6 left-6 bg-black/50 backdrop-blur-md rounded-2xl p-6 text-white z-10">
+          <div
+            className="absolute bottom-6 left-6 bg-black/50 backdrop-blur-md rounded-2xl p-6 text-white z-10 cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              setScreensaverActive(false);
+              setShowScreensaverPreview(false);
+              setLastActivityTime(Date.now());
+              setCurrentImageIndex(0);
+            }}
+          >
             <div className="text-sm text-slate-300 mb-1">{formatDate(currentTime)}</div>
             <div className={`text-5xl font-bold mb-3 bg-gradient-to-r ${currentAccent.gradient} bg-clip-text text-transparent`}>
               {formatTime(currentTime)}
@@ -2090,7 +2441,8 @@ const FamilyDashboard = () => {
           {/* Close button for preview mode */}
           {showScreensaverPreview && (
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setShowScreensaverPreview(false);
                 setCurrentImageIndex(0);
               }}
@@ -2107,15 +2459,44 @@ const FamilyDashboard = () => {
 
 // Wrap with GoogleOAuthProvider
 const App = () => {
-  console.log('=== Google OAuth Configuration ===');
-  console.log('Client ID:', GOOGLE_CLIENT_ID);
-  console.log('API Key:', GOOGLE_API_KEY);
-  console.log('Calendar IDs:', CALENDAR_IDS);
-  console.log('Current URL:', window.location.href);
-  console.log('Current Port:', window.location.port);
+  const [clientId, setClientId] = useState(GOOGLE_CLIENT_ID);
+  const [apiDetailsLoaded, setApiDetailsLoaded] = useState(false);
+
+  useEffect(() => {
+    // Load API details to get the correct client ID
+    const loadApiDetailsForProvider = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/api-details`);
+        const result = await response.json();
+        if (result.success && result.data?.googleCalendar?.clientId) {
+          const id = result.data.googleCalendar.clientId;
+          setClientId(id);
+          GOOGLE_CLIENT_ID = id;
+          console.log('=== Google OAuth Configuration ===');
+          console.log('Client ID:', id);
+          console.log('Current URL:', window.location.href);
+          console.log('Current Port:', window.location.port);
+        }
+      } catch (error) {
+        console.error('Error loading API details in App wrapper:', error);
+        console.log('=== Google OAuth Configuration ===');
+        console.log('Client ID:', GOOGLE_CLIENT_ID);
+        console.log('Current URL:', window.location.href);
+        console.log('Current Port:', window.location.port);
+      }
+      setApiDetailsLoaded(true);
+    };
+
+    loadApiDetailsForProvider();
+  }, []);
+
+  // Don't render until API details are loaded
+  if (!apiDetailsLoaded || clientId === 'NotFound.apps.googleusercontent.com') {
+    return <div style={{ backgroundColor: '#1a1a1a', minHeight: '100vh' }} />;
+  }
 
   return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+    <GoogleOAuthProvider clientId={clientId}>
       <FamilyDashboard />
     </GoogleOAuthProvider>
   );

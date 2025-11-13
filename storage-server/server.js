@@ -247,6 +247,73 @@ app.post('/api/screensaver', async (req, res) => {
   }
 });
 
+// API Details endpoints - MUST be before the generic /api/:type route
+// Get API configuration
+app.get('/api/api-details', async (req, res) => {
+  try {
+    const filePath = path.join(WEB_APP_DATA_DIR, 'apiDetails.json');
+    const data = await fs.readFile(filePath, 'utf8');
+    res.json({ success: true, data: JSON.parse(data) });
+  } catch (error) {
+    // Return default API details if file doesn't exist
+    res.json({
+      success: true,
+      data: {
+        googleCalendar: {
+          apiKey: '',
+          clientId: '',
+          calendarIds: 'primary'
+        }
+      }
+    });
+  }
+});
+
+// Update API configuration
+app.post('/api/api-details', async (req, res) => {
+  try {
+    const filePath = path.join(WEB_APP_DATA_DIR, 'apiDetails.json');
+    await fs.writeFile(filePath, JSON.stringify(req.body, null, 2));
+    res.json({ success: true, data: req.body });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Experience/UX settings endpoints - MUST be before the generic /api/:type route
+// Get experience settings
+app.get('/api/experience', async (req, res) => {
+  try {
+    const filePath = path.join(WEB_APP_DATA_DIR, 'experience.json');
+    const data = await fs.readFile(filePath, 'utf8');
+    res.json({ success: true, data: JSON.parse(data) });
+  } catch (error) {
+    // Return default experience settings if file doesn't exist
+    res.json({
+      success: true,
+      data: {
+        modules: {
+          calendar: { displayLimit: 5 },
+          tasks: { displayLimit: 5 },
+          rewards: { displayLimit: 4 },
+          users: { displayLimit: 5 }
+        }
+      }
+    });
+  }
+});
+
+// Update experience settings
+app.post('/api/experience', async (req, res) => {
+  try {
+    const filePath = path.join(WEB_APP_DATA_DIR, 'experience.json');
+    await fs.writeFile(filePath, JSON.stringify(req.body, null, 2));
+    res.json({ success: true, data: req.body });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/api/:type', async (req, res) => {
   try {
     const { type } = req.params;
