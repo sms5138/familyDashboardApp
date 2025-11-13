@@ -4,8 +4,8 @@ import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import './global.css';
 
 // Google Calendar API Configuration
-const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_API_KEY || 'AIzaSyDlyIl0Z3YoH89NL5aa2OZVY2xysjYO0o8';
-const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '959515304842-8i8ljtopi6d2gvtp6vpvg1c6u8l1ohp2.apps.googleusercontent.com';
+const GOOGLE_API_KEY = process.env.REACT_APP_GOOGLE_API_KEY || 'NotFound';
+const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || 'NotFound.apps.googleusercontent.com';
 const CALENDAR_IDS = (process.env.REACT_APP_CALENDAR_IDS || 'primary,amandap.sawyer@gmail.com').split(',');
 const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 

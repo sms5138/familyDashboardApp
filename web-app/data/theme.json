@@ -1,7 +1,7 @@
 {
   "themeMode": "dark",
-  "accentColor": "purple",
-  "colorCycleEnabled": true,
+  "accentColor": "blue",
+  "colorCycleEnabled": false,
   "colorCycleIntervalMinutes": 1,
   "lastColorChangeDate": "1763054930728",
   "lastColorChangeHour": 11

@@ -1,5 +1,5 @@
 {
-  "enabled": false,
-  "delayMinutes": 5,
-  "imageIntervalMinutes": 1
+  "enabled": true,
+  "delayMinutes": 1,
+  "imageIntervalMinutes": 45
 }
