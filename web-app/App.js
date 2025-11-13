@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Plus, X, Calendar, Sun, Award, CheckCircle, Circle, Users, Settings, Power } from 'lucide-react';
+import { Bell, Plus, X, Calendar, Sun, Award, CheckCircle, Circle, Users, Settings, Power, Cloud, Droplets, Zap, CloudSnow } from 'lucide-react';
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import './global.css';
 
@@ -73,6 +73,16 @@ const FamilyDashboard = () => {
   const [googleClientId, setGoogleClientId] = useState(GOOGLE_CLIENT_ID);
   const [calendarIds, setCalendarIds] = useState(CALENDAR_IDS);
 
+  // Weather configuration state
+  const [weatherLocation, setWeatherLocation] = useState({
+    latitude: 40.7128,
+    longitude: -74.0060,
+    location: 'New York, NY'
+  });
+  const [temperatureUnit, setTemperatureUnit] = useState('fahrenheit');
+  const [citySuggestions, setCitySuggestions] = useState([]);
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
+
   // Experience/UX settings state
   const [experienceSettings, setExperienceSettings] = useState({
     modules: {
@@ -83,6 +93,17 @@ const FamilyDashboard = () => {
     }
   });
 
+  // Weather state
+  const [weather, setWeather] = useState({
+    temperature: null,
+    condition: 'Loading...',
+    location: null,
+    error: null,
+    weatherCode: null,
+    tempHigh: null,
+    tempLow: null
+  });
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -90,8 +111,11 @@ const FamilyDashboard = () => {
 
   // Load API configuration and all settings
   useEffect(() => {
-    loadApiDetails();
-    loadExperienceSettings();
+    const loadInitialConfig = async () => {
+      await loadApiDetails();
+      await loadExperienceSettings();
+    };
+    loadInitialConfig();
   }, []);
 
   // Load users, tasks, rewards, and settings from API
@@ -212,6 +236,23 @@ const FamilyDashboard = () => {
     };
   }, [screensaverEnabled, screensaverTimeout, lastActivityTime, screensaverActive]);
 
+  // Load weather data on location or temperature unit change and refresh every 10 minutes
+  useEffect(() => {
+    console.log('Weather useEffect triggered with:', { weatherLocation, temperatureUnit });
+    // Only load if we have valid coordinates
+    if (weatherLocation.latitude && weatherLocation.longitude) {
+      console.log('Valid location detected, loading weather...');
+      loadWeather();
+      const interval = setInterval(() => {
+        console.log('Refreshing weather (10 min interval)');
+        loadWeather();
+      }, 10 * 60 * 1000); // Refresh every 10 minutes
+      return () => clearInterval(interval);
+    } else {
+      console.warn('Invalid or missing location coordinates:', weatherLocation);
+    }
+  }, [weatherLocation, temperatureUnit]);
+
   // Screensaver image rotation
   useEffect(() => {
     if (screensaverActive && screensaverImages.length > 0) {
@@ -254,17 +295,30 @@ const FamilyDashboard = () => {
   // Load API configuration from server
   const loadApiDetails = async () => {
     try {
+      console.log('Loading API details from:', `${API_URL}/api/api-details`);
       const response = await fetch(`${API_URL}/api/api-details`);
       const result = await response.json();
-      if (result.success && result.data?.googleCalendar) {
-        const config = result.data.googleCalendar;
-        setGoogleApiKey(config.apiKey);
-        setGoogleClientId(config.clientId);
-        setCalendarIds(config.calendarIds.split(',').map(id => id.trim()));
-        // Update module-level variables
-        GOOGLE_API_KEY = config.apiKey;
-        GOOGLE_CLIENT_ID = config.clientId;
-        CALENDAR_IDS = config.calendarIds.split(',').map(id => id.trim());
+      console.log('API Details response:', result);
+
+      if (result.success && result.data) {
+        if (result.data.googleCalendar) {
+          const config = result.data.googleCalendar;
+          setGoogleApiKey(config.apiKey);
+          setGoogleClientId(config.clientId);
+          setCalendarIds(config.calendarIds.split(',').map(id => id.trim()));
+          // Update module-level variables
+          GOOGLE_API_KEY = config.apiKey;
+          GOOGLE_CLIENT_ID = config.clientId;
+          CALENDAR_IDS = config.calendarIds.split(',').map(id => id.trim());
+        }
+        if (result.data.weather) {
+          console.log('Setting weather location from API:', result.data.weather);
+          setWeatherLocation(result.data.weather);
+          if (result.data.weather.temperatureUnit) {
+            console.log('Setting temperature unit:', result.data.weather.temperatureUnit);
+            setTemperatureUnit(result.data.weather.temperatureUnit);
+          }
+        }
       }
     } catch (error) {
       console.error('Error loading API details:', error);
@@ -298,6 +352,246 @@ const FamilyDashboard = () => {
       });
     } catch (error) {
       console.error('Error saving experience settings:', error);
+    }
+  };
+
+  // Search for locations by postal code using Nominatim API
+  const searchByPostalCode = async (query) => {
+    if (!query || query.length < 3) {
+      setCitySuggestions([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?postalcode=${encodeURIComponent(query)}&format=json&limit=5`
+      );
+      const results = await response.json();
+      setCitySuggestions(results);
+      setShowCitySuggestions(true);
+    } catch (error) {
+      console.error('Error searching by postal code:', error);
+      setCitySuggestions([]);
+    }
+  };
+
+  // Convert WMO weather code to description
+  const getWeatherDescription = (code) => {
+    if (code === null) return 'Unknown';
+
+    // Clear sky
+    if (code === 0) return 'Clear sky';
+
+    // Mainly clear, partly cloudy, overcast
+    if (code === 1) return 'Mainly clear';
+    if (code === 2) return 'Partly cloudy';
+    if (code === 3) return 'Overcast';
+
+    // Fog and depositing rime fog
+    if (code === 45) return 'Fog';
+    if (code === 48) return 'Depositing rime fog';
+
+    // Drizzle
+    if (code === 51) return 'Light drizzle';
+    if (code === 53) return 'Moderate drizzle';
+    if (code === 55) return 'Dense drizzle';
+
+    // Freezing Drizzle
+    if (code === 56) return 'Light freezing drizzle';
+    if (code === 57) return 'Dense freezing drizzle';
+
+    // Rain
+    if (code === 61) return 'Slight rain';
+    if (code === 63) return 'Moderate rain';
+    if (code === 65) return 'Heavy rain';
+
+    // Freezing Rain
+    if (code === 66) return 'Light freezing rain';
+    if (code === 67) return 'Heavy freezing rain';
+
+    // Snow
+    if (code === 71) return 'Slight snow';
+    if (code === 73) return 'Moderate snow';
+    if (code === 75) return 'Heavy snow';
+    if (code === 77) return 'Snow grains';
+
+    // Rain and snow / mixed
+    if (code === 80) return 'Slight rain showers';
+    if (code === 81) return 'Moderate rain showers';
+    if (code === 82) return 'Violent rain showers';
+    if (code === 85) return 'Slight snow showers';
+    if (code === 86) return 'Heavy snow showers';
+
+    // Thunderstorm
+    if (code === 80) return 'Thunderstorm with slight hail';
+    if (code === 81) return 'Thunderstorm with moderate hail';
+    if (code === 82) return 'Thunderstorm with heavy hail';
+
+    return 'Clear';
+  };
+
+  // Get weather icon based on WMO weather code
+  // WMO Weather interpretation codes: https://www.open-meteo.com/en/docs
+  const getWeatherIcon = (code) => {
+    if (code === null) return <Sun size={40} className="text-yellow-400" />;
+
+    // Clear sky
+    if (code === 0) return <Sun size={40} className="text-yellow-400" />;
+
+    // Mainly clear, partly cloudy, overcast
+    if ([1, 2, 3].includes(code)) {
+      return (
+        <div className="relative">
+          <Sun size={40} className="text-yellow-400" />
+          <Cloud size={24} className="text-slate-400 absolute top-2 left-6" />
+        </div>
+      );
+    }
+
+    // Fog and depositing rime fog
+    if ([45, 48].includes(code)) {
+      return <Cloud size={40} className="text-slate-400" />;
+    }
+
+    // Drizzle
+    if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) {
+      return (
+        <div className="relative">
+          <Cloud size={40} className="text-slate-400" />
+          <Droplets size={20} className="text-blue-400 absolute -bottom-2 left-4" />
+        </div>
+      );
+    }
+
+    // Rain
+    if ([71, 73, 75, 77, 85, 86].includes(code)) {
+      return (
+        <div className="relative">
+          <Cloud size={40} className="text-slate-500" />
+          <Droplets size={24} className="text-blue-500 absolute -bottom-1 left-3" />
+        </div>
+      );
+    }
+
+    // Thunderstorm
+    if ([80, 81, 82, 85, 86].includes(code)) {
+      return (
+        <div className="relative">
+          <Cloud size={40} className="text-slate-600" />
+          <Zap size={20} className="text-yellow-300 absolute top-2 left-8" />
+        </div>
+      );
+    }
+
+    // Snow
+    if ([71, 73, 75, 77, 85, 86].includes(code)) {
+      return (
+        <div className="relative">
+          <Cloud size={40} className="text-slate-300" />
+          <CloudSnow size={20} className="text-blue-300 absolute -bottom-1 left-4" />
+        </div>
+      );
+    }
+
+    // Default to sun
+    return <Sun size={40} className="text-yellow-400" />;
+  };
+
+  // Select a location from suggestions
+  const selectLocation = (location) => {
+    // Extract city and state/region from display_name
+    // Format is usually: "City, County, State, Country" or similar
+    const parts = location.display_name.split(',').map(p => p.trim());
+
+    let city = '';
+    let region = '';
+
+    // Skip postal codes (typically numeric or alphanumeric at start)
+    // Find city (first non-postal-code part that has letters)
+    for (let i = 0; i < parts.length; i++) {
+      if (!/^\d+$/.test(parts[i]) && parts[i].length > 2) {
+        city = parts[i];
+        break;
+      }
+    }
+
+    // Find state/region (2-3 letter code, or second-to-last part if it's a name)
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const part = parts[i];
+      // Match US state abbreviations (2 letters) or full state names
+      if (/^[A-Z]{2}$/.test(part) || (part.length > 3 && part.match(/^[A-Z][a-z]+$/) && part !== city)) {
+        region = part;
+        break;
+      }
+    }
+
+    const displayName = region && city ? `${city}, ${region}` : city || parts[0];
+    setWeatherLocation({
+      location: displayName,
+      latitude: parseFloat(location.lat),
+      longitude: parseFloat(location.lon)
+    });
+    setCitySuggestions([]);
+    setShowCitySuggestions(false);
+  };
+
+  // Fetch weather data from Open-Meteo API (free, no API key required)
+  const loadWeather = async () => {
+    try {
+      const { latitude, longitude } = weatherLocation;
+      console.log('loadWeather called with:', { latitude, longitude, temperatureUnit });
+
+      if (!latitude || !longitude || latitude === undefined || longitude === undefined) {
+        console.warn('Weather location not set, skipping weather load', { latitude, longitude });
+        return;
+      }
+
+      // Ensure coordinates are numbers
+      const lat = parseFloat(latitude);
+      const lon = parseFloat(longitude);
+
+      if (isNaN(lat) || isNaN(lon)) {
+        console.error('Invalid coordinates:', { latitude, longitude, lat, lon });
+        return;
+      }
+
+      const unit = temperatureUnit === 'celsius' ? 'celsius' : 'fahrenheit';
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&temperature_unit=${unit}`;
+      console.log('Fetching weather from:', url);
+
+      const response = await fetch(url);
+      console.log('Weather API response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Weather API error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('Weather API response:', result);
+
+      if (result.current && result.daily) {
+        setWeather({
+          temperature: Math.round(result.current.temperature_2m),
+          condition: getWeatherDescription(result.current.weather_code),
+          location: weatherLocation.location,
+          error: null,
+          weatherCode: result.current.weather_code,
+          tempHigh: Math.round(result.daily.temperature_2m_max[0]),
+          tempLow: Math.round(result.daily.temperature_2m_min[0])
+        });
+        console.log('Weather updated successfully');
+      } else {
+        console.warn('No current weather data in response');
+      }
+    } catch (error) {
+      console.error('Error loading weather:', error);
+      setWeather(prev => ({
+        ...prev,
+        error: 'Unable to load weather',
+        condition: 'N/A'
+      }));
     }
   };
 
@@ -1488,6 +1782,158 @@ const FamilyDashboard = () => {
             </button>
           </div>
 
+          {/* Weather Settings */}
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl mb-6`}>
+            <h2 className="text-2xl font-bold mb-6">Weather Configuration</h2>
+            <p className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-6`}>
+              Search by postal code to automatically set location and coordinates, or manually enter latitude and longitude.
+            </p>
+
+            <div className="mb-4 relative">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Postal Code Search
+              </label>
+              <input
+                type="text"
+                placeholder="e.g., 76182 or 10001"
+                onChange={(e) => searchByPostalCode(e.target.value)}
+                onFocus={() => citySuggestions.length > 0 && setShowCitySuggestions(true)}
+                className={`w-full px-4 py-2 rounded-lg border ${themeMode === 'light' ? 'bg-white/50 border-gray-300 text-gray-900' : 'bg-white/5 border-white/20 text-white'} focus:outline-none focus:ring-2 focus:ring-teal-500`}
+              />
+
+              {/* Location Suggestions Dropdown */}
+              {showCitySuggestions && citySuggestions.length > 0 && (
+                <div className={`absolute top-full left-0 right-0 mt-2 rounded-lg border z-50 ${themeMode === 'light' ? 'bg-white/90 border-gray-300' : 'bg-slate-900/90 border-white/20'} shadow-lg`}>
+                  {citySuggestions.map((location, index) => (
+                    <button
+                      key={index}
+                      onClick={() => selectLocation(location)}
+                      className={`w-full text-left px-4 py-3 hover:${themeMode === 'light' ? 'bg-gray-100' : 'bg-white/10'} transition ${index < citySuggestions.length - 1 ? `border-b ${themeMode === 'light' ? 'border-gray-300' : 'border-white/20'}` : ''} ${themeMode === 'light' ? 'text-gray-900' : 'text-white'}`}
+                    >
+                      <div className="font-semibold">{location.display_name.split(',').slice(0, 2).join(',').trim()}</div>
+                      <div className={`text-xs ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'}`}>
+                        {location.lat}, {location.lon}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Temperature Unit Toggle */}
+            <div className="mb-4">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Temperature Unit
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setTemperatureUnit('fahrenheit')}
+                  className={`flex-1 py-2 rounded-lg font-semibold transition ${
+                    temperatureUnit === 'fahrenheit'
+                      ? `${currentAccent.bg} ${currentAccent.hover} text-white`
+                      : themeMode === 'light'
+                        ? 'bg-white/50 hover:bg-white/70 text-gray-900'
+                        : 'bg-white/5 hover:bg-white/10 text-white'
+                  }`}
+                >
+                  °F
+                </button>
+                <button
+                  onClick={() => setTemperatureUnit('celsius')}
+                  className={`flex-1 py-2 rounded-lg font-semibold transition ${
+                    temperatureUnit === 'celsius'
+                      ? `${currentAccent.bg} ${currentAccent.hover} text-white`
+                      : themeMode === 'light'
+                        ? 'bg-white/50 hover:bg-white/70 text-gray-900'
+                        : 'bg-white/5 hover:bg-white/10 text-white'
+                  }`}
+                >
+                  °C
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Current Location
+              </label>
+              <div className={`w-full px-4 py-2 rounded-lg border ${themeMode === 'light' ? 'bg-white/30 border-gray-300 text-gray-900' : 'bg-white/5 border-white/20 text-white'}`}>
+                {weatherLocation.location}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                  Latitude
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={weatherLocation.latitude}
+                  onChange={(e) => setWeatherLocation({ ...weatherLocation, latitude: parseFloat(e.target.value) })}
+                  className={`w-full px-4 py-2 rounded-lg border ${themeMode === 'light' ? 'bg-white/50 border-gray-300 text-gray-900' : 'bg-white/5 border-white/20 text-white'} focus:outline-none focus:ring-2 focus:ring-teal-500`}
+                />
+              </div>
+              <div>
+                <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                  Longitude
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={weatherLocation.longitude}
+                  onChange={(e) => setWeatherLocation({ ...weatherLocation, longitude: parseFloat(e.target.value) })}
+                  className={`w-full px-4 py-2 rounded-lg border ${themeMode === 'light' ? 'bg-white/50 border-gray-300 text-gray-900' : 'bg-white/5 border-white/20 text-white'} focus:outline-none focus:ring-2 focus:ring-teal-500`}
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={async () => {
+                const apiDetailsResponse = await fetch(`${API_URL}/api/api-details`);
+                const apiDetailsResult = await apiDetailsResponse.json();
+                const updatedApiDetails = {
+                  ...apiDetailsResult.data,
+                  weather: {
+                    ...weatherLocation,
+                    temperatureUnit
+                  }
+                };
+                await fetch(`${API_URL}/api/api-details`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(updatedApiDetails)
+                });
+
+                // Fetch weather with the current weatherLocation and temperatureUnit
+                try {
+                  const unit = temperatureUnit === 'celsius' ? 'celsius' : 'fahrenheit';
+                  const weatherResponse = await fetch(
+                    `https://api.open-meteo.com/v1/forecast?latitude=${weatherLocation.latitude}&longitude=${weatherLocation.longitude}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&temperature_unit=${unit}`
+                  );
+                  const weatherResult = await weatherResponse.json();
+                  if (weatherResult.current && weatherResult.daily) {
+                    setWeather({
+                      temperature: Math.round(weatherResult.current.temperature_2m),
+                      condition: getWeatherDescription(weatherResult.current.weather_code),
+                      location: weatherLocation.location,
+                      error: null,
+                      weatherCode: weatherResult.current.weather_code,
+                      tempHigh: Math.round(weatherResult.daily.temperature_2m_max[0]),
+                      tempLow: Math.round(weatherResult.daily.temperature_2m_min[0])
+                    });
+                  }
+                } catch (error) {
+                  console.error('Error loading weather:', error);
+                }
+              }}
+              className={`w-full ${currentAccent.bg} ${currentAccent.hover} py-3 rounded-lg font-bold transition text-white`}
+            >
+              Save Weather Configuration
+            </button>
+          </div>
+
           {/* Experience/UX Settings */}
           <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
             <h2 className="text-2xl font-bold mb-6">Display Limits</h2>
@@ -1679,11 +2125,19 @@ const FamilyDashboard = () => {
             {formatTime(currentTime)}
           </div>
           <div className="flex items-center justify-center gap-4">
-            <Sun size={40} className="text-yellow-400" />
-            <div className="text-4xl font-semibold">75°F</div>
-            <div className={`text-xl ${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'}`}>Clear</div>
+            {getWeatherIcon(weather.weatherCode)}
+            <div className="text-4xl font-semibold">{weather.temperature !== null ? `${weather.temperature}°${temperatureUnit === 'celsius' ? 'C' : 'F'}` : 'Loading...'}</div>
+            <div className={`text-xl ${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'}`}>{weather.condition}</div>
           </div>
-          <div className={`text-sm ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} mt-2`}>North Richland Hills, TX</div>
+          <div className={`flex items-center justify-center gap-4 mt-3 ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'}`}>
+            {weather.tempHigh !== null && weather.tempLow !== null && (
+              <>
+                <span className="text-sm">High: {weather.tempHigh}°{temperatureUnit === 'celsius' ? 'C' : 'F'}</span>
+                <span className="text-sm">Low: {weather.tempLow}°{temperatureUnit === 'celsius' ? 'C' : 'F'}</span>
+              </>
+            )}
+          </div>
+          <div className={`text-sm ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} mt-3`}>{weather.location || weatherLocation.location || 'Loading location...'}</div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2431,10 +2885,13 @@ const FamilyDashboard = () => {
             <div className={`text-5xl font-bold mb-3 bg-gradient-to-r ${currentAccent.gradient} bg-clip-text text-transparent`}>
               {formatTime(currentTime)}
             </div>
+            <div className="text-xs text-slate-400 mb-3">{weather.location}</div>
             <div className="flex items-center gap-3">
-              <Sun size={24} className="text-yellow-400" />
-              <div className="text-2xl font-semibold">75°F</div>
-              <div className="text-lg text-slate-300">Clear</div>
+              <div style={{ transform: 'scale(0.8)', transformOrigin: 'left' }}>
+                {getWeatherIcon(weather.weatherCode)}
+              </div>
+              <div className="text-2xl font-semibold">{weather.temperature !== null ? `${weather.temperature}°${temperatureUnit === 'celsius' ? 'C' : 'F'}` : 'Loading...'}</div>
+              <div className="text-lg text-slate-300">{weather.condition}</div>
             </div>
           </div>
 

@@ -263,6 +263,12 @@ app.get('/api/api-details', async (req, res) => {
           apiKey: '',
           clientId: '',
           calendarIds: 'primary'
+        },
+        weather: {
+          location: 'New York, NY',
+          latitude: 40.7128,
+          longitude: -74.0060,
+          temperatureUnit: 'fahrenheit'
         }
       }
     });
