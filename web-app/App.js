@@ -116,12 +116,12 @@ const FamilyDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4 md:p-6 overflow-x-hidden">
+    <div className="min-h-screen w-full bg-gradient-to-br from-gray-950 via-slate-950 to-gray-950 text-white p-4 md:p-6 overflow-x-hidden">
       <div className="max-w-7xl mx-auto w-full">
         {/* Time and Weather Section */}
         <div className="text-center mb-8 bg-white/5 backdrop-blur-lg rounded-3xl p-8 shadow-2xl">
           <div className="text-slate-400 text-lg mb-2">{formatDate(currentTime)}</div>
-          <div className="text-8xl font-bold mb-6 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+          <div className="text-8xl font-bold mb-6 bg-gradient-to-r from-teal-400 to-cyan-400 bg-clip-text text-transparent">
             {formatTime(currentTime)}
           </div>
           <div className="flex items-center justify-center gap-4">
@@ -137,7 +137,7 @@ const FamilyDashboard = () => {
           <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Calendar className="text-indigo-400" size={24} />
+                <Calendar className="text-teal-400" size={24} />
                 <h2 className="text-2xl font-bold">Calendar</h2>
               </div>
             </div>
@@ -162,7 +162,7 @@ const FamilyDashboard = () => {
               <h2 className="text-2xl font-bold">Tasks</h2>
               <button
                 onClick={() => setShowTaskModal(true)}
-                className="bg-indigo-600 hover:bg-indigo-700 p-2 rounded-full transition"
+                className="bg-teal-600 hover:bg-teal-700 p-2 rounded-full transition"
               >
                 <Plus size={24} />
               </button>
@@ -175,7 +175,7 @@ const FamilyDashboard = () => {
                   onClick={() => toggleTask(task.id)}
                 >
                   {task.completed ? (
-                    <CheckCircle size={28} className="text-green-500 flex-shrink-0" />
+                    <CheckCircle size={28} className="text-teal-500 flex-shrink-0" />
                   ) : (
                     <Circle size={28} className="text-slate-500 flex-shrink-0" />
                   )}
@@ -202,7 +202,7 @@ const FamilyDashboard = () => {
               {USERS.map(user => (
                 <div key={user} className="bg-white/10 p-4 rounded-xl flex justify-between items-center">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center font-bold">
+                    <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-full flex items-center justify-center font-bold">
                       {user[0]}
                     </div>
                     <span className="font-semibold text-lg">{user}</span>
@@ -222,7 +222,7 @@ const FamilyDashboard = () => {
               <h2 className="text-2xl font-bold">Rewards</h2>
               <button
                 onClick={() => setShowRewardModal(true)}
-                className="bg-indigo-600 hover:bg-indigo-700 p-2 rounded-full transition"
+                className="bg-teal-600 hover:bg-teal-700 p-2 rounded-full transition"
               >
                 <Plus size={24} />
               </button>
@@ -242,7 +242,7 @@ const FamilyDashboard = () => {
                         disabled={userPoints[user] < reward.cost}
                         className={`px-4 py-2 rounded-lg font-medium transition ${
                           userPoints[user] >= reward.cost
-                            ? 'bg-green-600 hover:bg-green-700'
+                            ? 'bg-teal-600 hover:bg-teal-700'
                             : 'bg-slate-600 opacity-50 cursor-not-allowed'
                         }`}
                       >
@@ -260,7 +260,7 @@ const FamilyDashboard = () => {
       {/* Add Task Modal */}
       {showTaskModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-          <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+          <div className="bg-slate-900 rounded-2xl p-8 max-w-md w-full shadow-2xl">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold">Add Task</h3>
               <button onClick={() => setShowTaskModal(false)}>
@@ -295,7 +295,7 @@ const FamilyDashboard = () => {
                     onClick={() => setNewTask({...newTask, assignedTo: user})}
                     className={`px-4 py-2 rounded-lg font-medium transition ${
                       newTask.assignedTo === user
-                        ? 'bg-indigo-600'
+                        ? 'bg-teal-600'
                         : 'bg-white/10 hover:bg-white/20'
                     }`}
                   >
@@ -314,7 +314,7 @@ const FamilyDashboard = () => {
                     onClick={() => toggleDay(day)}
                     className={`px-3 py-2 rounded-lg font-medium transition ${
                       newTask.recurrence.includes(day)
-                        ? 'bg-green-600'
+                        ? 'bg-teal-600'
                         : 'bg-white/10 hover:bg-white/20'
                     }`}
                   >
@@ -337,7 +337,7 @@ const FamilyDashboard = () => {
 
             <button
               onClick={addTask}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 py-3 rounded-lg font-bold transition"
+              className="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition"
             >
               Add Task
             </button>
@@ -348,7 +348,7 @@ const FamilyDashboard = () => {
       {/* Add Reward Modal */}
       {showRewardModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-          <div className="bg-slate-800 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+          <div className="bg-slate-900 rounded-2xl p-8 max-w-md w-full shadow-2xl">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold">Add Reward</h3>
               <button onClick={() => setShowRewardModal(false)}>
@@ -376,7 +376,7 @@ const FamilyDashboard = () => {
 
             <button
               onClick={addReward}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 py-3 rounded-lg font-bold transition"
+              className="w-full bg-teal-600 hover:bg-teal-700 py-3 rounded-lg font-bold transition"
             >
               Add Reward
             </button>
