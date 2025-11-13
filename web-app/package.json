@@ -7,13 +7,20 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo/webpack-config": "^19.0.0",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "crypto-browserify": "^3.12.1",
     "expo": "~50.0.0",
+    "expo-calendar": "^15.0.7",
+    "expo-location": "^19.0.7",
+    "expo-notifications": "^0.32.12",
     "expo-status-bar": "~1.11.1",
     "react": "18.2.0",
-    "react-native": "0.73.2",
-    "react-native-web": "~0.19.6",
     "react-dom": "18.2.0",
-    "@expo/webpack-config": "^19.0.0"
+    "react-native": "0.73.6",
+    "react-native-web": "~0.19.6",
+    "stream-browserify": "^3.0.0",
+    "vm-browserify": "^1.1.2"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"
