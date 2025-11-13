@@ -2273,29 +2273,46 @@ const FamilyDashboard = () => {
           {/* Ice rink background */}
           <div className="absolute inset-0 bg-gradient-to-b from-blue-900/30 via-blue-800/20 to-blue-900/30"></div>
 
-          {/* Hockey Player */}
+          {/* Hockey Stick */}
           <div
-            className="absolute bottom-20 left-1/3 text-6xl"
+            className="absolute bottom-20 left-1/3"
             style={{
               animation: 'slideRight 2s ease-out forwards'
             }}
           >
-            🏒
+            <svg width="80" height="80" viewBox="0 0 80 80" className="drop-shadow-lg">
+              {/* Hockey stick handle */}
+              <line x1="15" y1="10" x2="45" y2="55" stroke="#8B4513" strokeWidth="6" strokeLinecap="round" />
+              {/* Hockey stick blade */}
+              <path d="M 45 55 Q 60 60 70 58 L 68 65 Q 58 67 43 62 Z" fill="#654321" stroke="#8B4513" strokeWidth="2" />
+            </svg>
           </div>
 
           {/* Hockey Puck */}
           <div
-            className="absolute bottom-24 left-1/3 text-4xl"
+            className="absolute bottom-24 left-1/3"
             style={{
               animation: 'shootPuck 2s ease-out forwards'
             }}
           >
-            ⚫
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-900 via-black to-gray-800 border-2 border-gray-700 shadow-lg"></div>
           </div>
 
-          {/* Hockey Goalie */}
-          <div className="absolute bottom-20 right-1/3 text-6xl opacity-70">
-            🥅
+          {/* Hockey Goal */}
+          <div className="absolute bottom-20 right-1/3">
+            <svg width="100" height="100" viewBox="0 0 100 100" className="opacity-90">
+              {/* Goal frame */}
+              <rect x="10" y="30" width="80" height="60" fill="none" stroke="#DC2626" strokeWidth="4" rx="5" />
+              {/* Net pattern */}
+              <line x1="10" y1="40" x2="90" y2="40" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
+              <line x1="10" y1="50" x2="90" y2="50" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
+              <line x1="10" y1="60" x2="90" y2="60" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
+              <line x1="10" y1="70" x2="90" y2="70" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
+              <line x1="10" y1="80" x2="90" y2="80" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
+              <line x1="30" y1="30" x2="30" y2="90" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
+              <line x1="50" y1="30" x2="50" y2="90" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
+              <line x1="70" y1="30" x2="70" y2="90" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
+            </svg>
           </div>
 
           {/* Goal Celebration Text */}
@@ -2469,7 +2486,8 @@ const FamilyDashboard = () => {
                 )}
               </div>
             </div>
-            <div className="space-y-3">
+
+            <div className={`space-y-3 ${isSignedIn && !calendarLoading && !calendarError && calendarEvents.length > experienceSettings.modules.calendar.displayLimit ? 'overflow-y-auto max-h-[800px] pr-2' : ''}`}>
               {!isSignedIn ? (
                 <div className="text-center text-slate-400 py-8">
                   Sign in with Google to view your calendar events
@@ -2493,19 +2511,17 @@ const FamilyDashboard = () => {
                   No upcoming events
                 </div>
               ) : (
-                <div className={`space-y-3 ${calendarEvents.length > experienceSettings.modules.calendar.displayLimit ? 'overflow-y-auto max-h-96 pr-2' : ''}`}>
-                  {calendarEvents.map(event => (
-                    <div
-                      key={event.id}
-                      className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl border-l-4`}
-                      style={{ borderLeftColor: event.color }}
-                    >
-                      <div className="font-semibold text-lg">{event.title}</div>
-                      <div className={`${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'} text-sm mt-1`}>{event.time}</div>
-                      <div className={`${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} text-xs mt-1`}>{event.date}</div>
-                    </div>
-                  ))}
-                </div>
+                calendarEvents.map(event => (
+                  <div
+                    key={event.id}
+                    className={`${themeMode === 'light' ? 'bg-gray-200' : 'bg-white/10'} p-4 rounded-xl border-l-4`}
+                    style={{ borderLeftColor: event.color }}
+                  >
+                    <div className="font-semibold text-lg">{event.title}</div>
+                    <div className={`${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'} text-sm mt-1`}>{event.time}</div>
+                    <div className={`${themeMode === 'light' ? 'text-gray-500' : 'text-slate-400'} text-xs mt-1`}>{event.date}</div>
+                  </div>
+                ))
               )}
             </div>
           </div>
@@ -2539,7 +2555,7 @@ const FamilyDashboard = () => {
               ))}
             </div>
 
-            <div className={`space-y-3 ${filteredTasks.length > experienceSettings.modules.tasks.displayLimit ? 'overflow-y-auto max-h-96 pr-2' : ''}`}>
+            <div className={`space-y-3 ${filteredTasks.length > experienceSettings.modules.tasks.displayLimit ? 'overflow-y-auto max-h-[800px] pr-2' : ''}`}>
               {filteredTasks.map(task => (
                 <div
                   key={task.id}

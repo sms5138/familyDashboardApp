@@ -1,0 +1,20 @@
+✅ Setup Complete!
+I've successfully set up the dashboard command on your machine. You can now launch and control your Family Dashboard by simply typing dashboard into the terminal.
+Available Commands:
+dashboard start - Start both the storage-server and web-app
+dashboard stop - Stop all dashboard services
+dashboard restart - Restart the dashboard
+dashboard status - Check if services are running
+dashboard logs - View live logs from both services
+dashboard storage - Check storage server health
+dashboard backup - Create a data backup
+What I did:
+✅ Installed Node.js v20.19.5 and npm v10.8.2
+✅ Installed dependencies for both storage-server and web-app
+✅ Created ~/dashboard-control.sh with proper paths
+✅ Created symlink at /usr/local/bin/dashboard for global access
+✅ Tested and verified both services are running
+Currently Running:
+✅ Storage server: http://localhost:3001
+✅ Web app: http://localhost:19006
+You can access the web app by opening http://localhost:19006 in your browser!

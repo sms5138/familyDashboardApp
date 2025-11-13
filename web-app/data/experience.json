@@ -1,7 +1,7 @@
 {
   "modules": {
     "calendar": {
-      "displayLimit": 4,
+      "displayLimit": 10,
       "description": "Maximum number of calendar events to show before scrolling",
       "calendarColors": {
         "primary": "#f59e0b",
@@ -9,15 +9,15 @@
       }
     },
     "tasks": {
-      "displayLimit": 4,
+      "displayLimit": 10,
       "description": "Maximum number of tasks to show before scrolling"
     },
     "rewards": {
-      "displayLimit": 4,
+      "displayLimit": 10,
       "description": "Maximum number of rewards to show before scrolling"
     },
     "users": {
-      "displayLimit": 4,
+      "displayLimit": 10,
       "description": "Maximum number of users to show before scrolling"
     }
   },
