@@ -5,13 +5,18 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const archiver = require('archiver');
+const multer = require('multer');
 
 const app = express();
 const PORT = 3001;
+
+// Configure multer for file uploads
+const upload = multer({ dest: '/tmp' });
 // Use web-app/data directory for users.json, storage-server/data for other data
 const DATA_DIR = path.join(__dirname, 'data');
 const WEB_APP_DATA_DIR = path.join(__dirname, '..', 'web-app', 'data');
 const PHOTOS_DIR = path.join(WEB_APP_DATA_DIR, 'photos');
+const ASSETS_DIR = path.join(WEB_APP_DATA_DIR, 'assets');
 const BACKUPS_DIR = path.join(WEB_APP_DATA_DIR, 'backups');
 
 // Backup scheduler state
@@ -20,6 +25,7 @@ let backupScheduler = null;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use('/photos', express.static(PHOTOS_DIR));
+app.use('/data/assets', express.static(ASSETS_DIR));
 
 async function ensureDataDir() {
   try {
@@ -391,6 +397,55 @@ app.post('/api/screensaver', async (req, res) => {
     const filePath = path.join(WEB_APP_DATA_DIR, 'screensaver.json');
     await fs.writeFile(filePath, JSON.stringify(req.body, null, 2));
     res.json({ success: true, data: req.body });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Celebration endpoints - MUST be before the generic /api/:type route
+// Get celebration settings
+app.get('/api/celebration', async (req, res) => {
+  try {
+    const filePath = path.join(WEB_APP_DATA_DIR, 'celebration.json');
+    const data = await fs.readFile(filePath, 'utf8');
+    res.json({ success: true, data: JSON.parse(data) });
+  } catch (error) {
+    // Return default celebration settings if file doesn't exist
+    res.json({
+      success: true,
+      data: {
+        celebrationMessage: 'Great Job!',
+        favoriteImages: [1, 2]
+      }
+    });
+  }
+});
+
+// Update celebration settings
+app.post('/api/celebration', async (req, res) => {
+  try {
+    const filePath = path.join(WEB_APP_DATA_DIR, 'celebration.json');
+    await fs.writeFile(filePath, JSON.stringify(req.body, null, 2));
+    res.json({ success: true, data: req.body });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Upload favorite image endpoint
+app.post('/api/upload-favorite', upload.single('image'), async (req, res) => {
+  try {
+    const file = req.file;
+    const filename = req.body.filename || `favorite${Date.now()}.png`;
+    const destPath = path.join(WEB_APP_DATA_DIR, 'assets', 'complete_task', filename);
+
+    // Ensure directory exists
+    await fs.mkdir(path.dirname(destPath), { recursive: true });
+
+    // Move file to destination
+    await fs.rename(file.path, destPath);
+
+    res.json({ success: true, filename });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

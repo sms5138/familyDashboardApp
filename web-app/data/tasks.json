@@ -58,17 +58,6 @@
     "completed": false
   },
   {
-    "name": "Do Something Cool Today",
-    "points": 1,
-    "assignedTo": "Nolan",
-    "recurrence": [
-      "Fri"
-    ],
-    "period": "Morning",
-    "id": 1763044971366,
-    "completed": false
-  },
-  {
     "name": "Work On Math Skills for 15 Minutes",
     "points": 4,
     "assignedTo": "Nolan",

@@ -12,7 +12,8 @@
   {
     "name": "Hockey Stick",
     "cost": 150,
-    "id": 1763005429974
+    "id": 1763005429974,
+    "oneTime": true
   },
   {
     "name": "1000 Robux",

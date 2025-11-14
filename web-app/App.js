@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Plus, X, Calendar, Sun, Award, CheckCircle, Circle, Users, Settings, Power, Cloud, Droplets, Zap, CloudSnow } from 'lucide-react';
+import { Bell, Plus, X, Calendar, Sun, Award, CheckCircle, Circle, Users, Settings, Power, Cloud, Droplets, Zap, CloudSnow, RotateCcw, ChevronDown } from 'lucide-react';
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import './global.css';
 
@@ -89,14 +89,20 @@ const FamilyDashboard = () => {
   const [lastActivityTime, setLastActivityTime] = useState(Date.now());
   const [showHockeyAnimation, setShowHockeyAnimation] = useState(false);
   const [clockCorner, setClockCorner] = useState('bottom-left');
+  const [celebrationMessage, setCelebrationMessage] = useState('Great Job!');
+  const [favoriteImages, setFavoriteImages] = useState([1, 2]);
+  const [favoriteImageUrls, setFavoriteImageUrls] = useState({});
+  const [screensaverImagesExpanded, setScreensaverImagesExpanded] = useState(false);
+
   const [newTask, setNewTask] = useState({
     name: '',
     points: 1,
     assignedTo: users[0]?.name || '',
     recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-    period: 'Morning'
+    period: 'Morning',
+    oneTime: false
   });
-  const [newReward, setNewReward] = useState({ name: '', cost: 5 });
+  const [newReward, setNewReward] = useState({ name: '', cost: 5, oneTime: false });
 
   // API configuration state
   const [googleApiKey, setGoogleApiKey] = useState(GOOGLE_API_KEY);
@@ -160,6 +166,8 @@ const FamilyDashboard = () => {
     loadPhotos();
     loadThemeSettings();
     loadScreensaverSettings();
+    loadCelebrationSettings();
+    loadFavoriteImages();
   }, []);
 
   // Auto theme mode based on time of day
@@ -810,6 +818,91 @@ const FamilyDashboard = () => {
     }
   };
 
+  // Celebration settings functions
+  const loadCelebrationSettings = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/celebration`);
+      const result = await response.json();
+      if (result.success && result.data) {
+        setCelebrationMessage(result.data.celebrationMessage || 'Great Job!');
+        setFavoriteImages(result.data.favoriteImages || [1, 2]);
+      }
+    } catch (error) {
+      console.error('Error loading celebration settings:', error);
+    }
+  };
+
+  const saveCelebrationSettings = async (settings) => {
+    try {
+      await fetch(`${API_URL}/api/celebration`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(settings),
+      });
+    } catch (error) {
+      console.error('Error saving celebration settings:', error);
+    }
+  };
+
+  const loadFavoriteImages = async () => {
+    try {
+      const urls = {};
+      const formats = ['png', 'jpeg', 'jpg'];
+
+      for (let i = 1; i <= 5; i++) {
+        for (const format of formats) {
+          const imagePath = `${API_URL}/data/assets/complete_task/favorite${i}.${format}`;
+          try {
+            // Try to fetch with GET request to check if image exists
+            const response = await fetch(imagePath, {
+              method: 'GET',
+              headers: { 'Range': 'bytes=0-0' } // Only fetch first byte to be quick
+            });
+            if (response.ok || response.status === 206) { // 206 = Partial Content (Range request accepted)
+              urls[i] = imagePath;
+              console.log(`Found favorite${i}.${format}`);
+              break; // Found an image, move to next favorite number
+            }
+          } catch (error) {
+            // Format doesn't exist, try next format
+            continue;
+          }
+        }
+      }
+      console.log('Loaded favorite images:', urls);
+      setFavoriteImageUrls(urls);
+    } catch (error) {
+      console.error('Error loading favorite image URLs:', error);
+    }
+  };
+
+  const handleUploadFavoriteImage = async (favoriteNum, file) => {
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('filename', `favorite${favoriteNum}.png`);
+
+      const response = await fetch(`${API_URL}/api/upload-favorite`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        // Reload favorite images to show the newly uploaded image
+        await loadFavoriteImages();
+      } else {
+        alert('Failed to upload favorite image');
+      }
+    } catch (error) {
+      console.error('Error uploading favorite image:', error);
+      alert('Error uploading favorite image');
+    }
+  };
+
   // Screensaver settings functions
   const loadScreensaverSettings = async () => {
     try {
@@ -945,10 +1038,11 @@ const FamilyDashboard = () => {
       setCalendarLoading(true);
       setCalendarError(null);
 
-      // Get events for the next 7 days
+      // Get events for the next 7 days (inclusive)
       const now = new Date();
       const endDate = new Date();
-      endDate.setDate(endDate.getDate() + 7);
+      endDate.setDate(endDate.getDate() + 8); // Add 8 days to include events exactly 7 days out
+      endDate.setHours(0, 0, 0, 0); // Set to start of day
 
       console.log('Date range:', now.toISOString(), 'to', endDate.toISOString());
 
@@ -1004,8 +1098,23 @@ const FamilyDashboard = () => {
           return aStart - bStart;
         })
         .map((event, index) => {
-          const startDate = new Date(event.start.dateTime || event.start.date);
-          const endDate = new Date(event.end.dateTime || event.end.date);
+          // Parse dates correctly handling timezone issues for all-day events
+          let startDate;
+          if (event.start.dateTime) {
+            startDate = new Date(event.start.dateTime);
+          } else {
+            // For all-day events, parse as local date to avoid timezone issues
+            const [year, month, day] = event.start.date.split('-').map(Number);
+            startDate = new Date(year, month - 1, day);
+          }
+
+          let endDate;
+          if (event.end.dateTime) {
+            endDate = new Date(event.end.dateTime);
+          } else {
+            const [year, month, day] = event.end.date.split('-').map(Number);
+            endDate = new Date(year, month - 1, day);
+          }
 
           // Format time (handle all-day events)
           let timeStr;
@@ -1036,7 +1145,7 @@ const FamilyDashboard = () => {
             title: event.summary || 'Untitled Event',
             time: timeStr,
             date: dateStr,
-            start: event.start.dateTime || event.start.date, // Preserve raw date for grouping
+            start: startDate, // Use parsed date object for proper grouping
             color: color,
             calendarId: event.calendarId
           };
@@ -1113,7 +1222,8 @@ const FamilyDashboard = () => {
         points: 1,
         assignedTo: users[0]?.name || '',
         recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-        period: 'Morning'
+        period: 'Morning',
+        oneTime: false
       });
       setShowTaskModal(false);
     }
@@ -1124,7 +1234,7 @@ const FamilyDashboard = () => {
       const updatedRewards = [...rewards, { ...newReward, id: Date.now() }];
       setRewards(updatedRewards);
       await saveRewards(updatedRewards);
-      setNewReward({ name: '', cost: 5 });
+      setNewReward({ name: '', cost: 5, oneTime: false });
       setShowRewardModal(false);
     }
   };
@@ -1139,10 +1249,18 @@ const FamilyDashboard = () => {
       ? currentPoints + task.points
       : Math.max(0, currentPoints - task.points);
 
-    // Update task completion status
-    const updatedTasks = tasks.map(t =>
-      t.id === taskId ? { ...t, completed: newCompleted } : t
-    );
+    let updatedTasks;
+
+    // If task is one-time and being completed, delete it instead of updating
+    if (task.oneTime && newCompleted) {
+      updatedTasks = tasks.filter(t => t.id !== taskId);
+    } else {
+      // Update task completion status
+      updatedTasks = tasks.map(t =>
+        t.id === taskId ? { ...t, completed: newCompleted } : t
+      );
+    }
+
     setTasks(updatedTasks);
 
     // Save tasks to API
@@ -1176,6 +1294,14 @@ const FamilyDashboard = () => {
       // Parent user, no PIN needed
       const newPoints = userPoints[userName] - reward.cost;
       await updateUserPoints(userName, newPoints);
+
+      // If reward is one-time, delete it
+      if (reward.oneTime) {
+        const updatedRewards = rewards.filter(r => r.id !== reward.id);
+        setRewards(updatedRewards);
+        await saveRewards(updatedRewards);
+      }
+
       triggerConfetti();
     }
   };
@@ -1314,7 +1440,7 @@ const FamilyDashboard = () => {
     return users.some(user => user.type === 'Parent' && user.pin === enteredPin);
   };
 
-  const handlePinSubmit = () => {
+  const handlePinSubmit = async () => {
     if (validatePin(pinInput)) {
       // PIN is correct, process the reward redemption
       if (pendingReward) {
@@ -1322,7 +1448,15 @@ const FamilyDashboard = () => {
         const user = users.find(u => u.name === userName);
 
         if (user && user.points >= reward.cost) {
-          updateUserPoints(userName, user.points - reward.cost);
+          await updateUserPoints(userName, user.points - reward.cost);
+
+          // If reward is one-time, delete it
+          if (reward.oneTime) {
+            const updatedRewards = rewards.filter(r => r.id !== reward.id);
+            setRewards(updatedRewards);
+            await saveRewards(updatedRewards);
+          }
+
           triggerConfetti();
         }
       }
@@ -1403,7 +1537,7 @@ const FamilyDashboard = () => {
   const closeRewardModal = () => {
     setShowRewardModal(false);
     setEditingReward(null);
-    setNewReward({ name: '', cost: 5 });
+    setNewReward({ name: '', cost: 5, oneTime: false });
   };
 
   const editTask = (index) => {
@@ -1439,6 +1573,17 @@ const FamilyDashboard = () => {
     }
   };
 
+  const resetAllTasks = async () => {
+    if (window.confirm('Are you sure you want to reset all tasks? This will mark all tasks as incomplete without affecting user points.')) {
+      const resetTasks = tasks.map(task => ({
+        ...task,
+        completed: false
+      }));
+      setTasks(resetTasks);
+      await saveTasks(resetTasks);
+    }
+  };
+
   const closeTaskModal = () => {
     setShowTaskModal(false);
     setEditingTask(null);
@@ -1447,7 +1592,8 @@ const FamilyDashboard = () => {
       points: 1,
       assignedTo: users[0]?.name || '',
       recurrence: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-      period: 'Morning'
+      period: 'Morning',
+      oneTime: false
     });
   };
 
@@ -1486,11 +1632,15 @@ const FamilyDashboard = () => {
           </div>
 
           {/* Theme Settings */}
-          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl mb-6`}>
-            <h2 className="text-2xl font-bold mb-6">Theme</h2>
-
-            {/* Theme Mode */}
-            <div className="mb-6">
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl shadow-xl mb-6`}>
+            <button
+              className={`w-full flex items-center justify-between p-6 hover:opacity-80 transition`}
+            >
+              <h2 className="text-2xl font-bold">Theme</h2>
+            </button>
+            <div className="p-6 pt-6">
+              {/* Theme Mode */}
+              <div className="mb-6">
               <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-3 block font-semibold`}>Display Mode:</label>
               <div className="grid grid-cols-3 gap-3">
                 {['light', 'dark', 'auto'].map(mode => (
@@ -1612,15 +1762,20 @@ const FamilyDashboard = () => {
                   </p>
                 </div>
               )}
+              </div>
             </div>
           </div>
 
           {/* Screensaver Settings */}
-          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
-            <h2 className="text-2xl font-bold mb-6">Screensaver</h2>
-
-            {/* Enable Screensaver */}
-            <div className="mb-6">
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl shadow-xl mb-6`}>
+            <button
+              className={`w-full flex items-center justify-between p-6 hover:opacity-80 transition`}
+            >
+              <h2 className="text-2xl font-bold">Screensaver</h2>
+            </button>
+            <div className="p-6 pt-6">
+              {/* Enable Screensaver */}
+              <div className="mb-6">
               <div className="flex items-center justify-between">
                 <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} font-semibold`}>Enable Screensaver:</label>
                 <button
@@ -1712,29 +1867,40 @@ const FamilyDashboard = () => {
               </p>
             </div>
 
-            {/* Uploaded Images List */}
+            {/* Uploaded Images List - Collapsible */}
             {screensaverImages.length > 0 && (
               <div className="mb-6">
-                <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
-                  Uploaded Images ({screensaverImages.length}):
-                </label>
-                <div className="grid grid-cols-3 gap-3">
-                  {screensaverImages.map((img, index) => (
-                    <div key={index} className="relative group">
-                      <img
-                        src={img}
-                        alt={`Screensaver ${index + 1}`}
-                        className="w-full h-24 object-cover rounded-lg"
-                      />
-                      <button
-                        onClick={() => deletePhoto(img)}
-                        className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 p-1 rounded opacity-0 group-hover:opacity-100 transition"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                <button
+                  onClick={() => setScreensaverImagesExpanded(!screensaverImagesExpanded)}
+                  className={`w-full flex items-center justify-between p-3 rounded-lg transition ${
+                    themeMode === 'light' ? 'bg-gray-200 hover:bg-gray-300' : 'bg-white/10 hover:bg-white/20'
+                  }`}
+                >
+                  <span className={`text-sm font-semibold ${themeMode === 'light' ? 'text-gray-700' : 'text-slate-300'}`}>
+                    Uploaded Images ({screensaverImages.length})
+                  </span>
+                  <ChevronDown size={20} className={`transition-transform ${screensaverImagesExpanded ? 'rotate-180' : ''}`} />
+                </button>
+
+                {screensaverImagesExpanded && (
+                  <div className="grid grid-cols-3 gap-3 mt-3">
+                    {screensaverImages.map((img, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={img}
+                          alt={`Screensaver ${index + 1}`}
+                          className="w-full h-24 object-cover rounded-lg"
+                        />
+                        <button
+                          onClick={() => deletePhoto(img)}
+                          className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 p-1 rounded opacity-0 group-hover:opacity-100 transition"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1749,11 +1915,168 @@ const FamilyDashboard = () => {
             >
               Preview Screensaver
             </button>
+            </div>
+          </div>
+
+          {/* Celebration Settings */}
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl shadow-xl mb-6`}>
+            <button
+              className={`w-full flex items-center justify-between p-6 hover:opacity-80 transition`}
+            >
+              <h2 className="text-2xl font-bold">Task Completion Celebration</h2>
+            </button>
+            <div className="p-6 pt-6">
+
+            {/* Celebration Message */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Celebration Message:
+              </label>
+              <input
+                type="text"
+                value={celebrationMessage}
+                onChange={async (e) => {
+                  setCelebrationMessage(e.target.value);
+                  await saveCelebrationSettings({
+                    celebrationMessage: e.target.value,
+                    favoriteImages
+                  });
+                }}
+                placeholder="e.g., Great Job!, Awesome!, Well Done!"
+                className={`w-full ${themeMode === 'light' ? 'bg-gray-200 text-gray-900' : 'bg-white/10 text-white'} p-3 rounded-lg`}
+              />
+            </div>
+
+            {/* Favorite Images Management */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Favorite Images (confetti):
+              </label>
+              <p className={`text-xs ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-500'} mb-3`}>
+                Select which favorite images to use in the celebration animation (up to 5)
+              </p>
+              <div className="grid grid-cols-5 gap-3">
+                {[1, 2, 3, 4, 5].map((num) => {
+                  const hasImage = !!favoriteImageUrls[num];
+                  const isSelected = favoriteImages.includes(num);
+
+                  return (
+                    <div key={num} className="relative">
+                      {!hasImage && (
+                        <input
+                          type="file"
+                          id={`favorite-upload-${num}`}
+                          accept="image/png,image/jpeg"
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                              handleUploadFavoriteImage(num, e.target.files[0]);
+                              e.target.value = '';
+                            }
+                          }}
+                          className="hidden"
+                          title={`Upload favorite ${num}`}
+                        />
+                      )}
+                      <button
+                        onClick={async (e) => {
+                          if (!hasImage) {
+                            // No image - trigger file upload
+                            document.getElementById(`favorite-upload-${num}`)?.click();
+                          } else {
+                            // Has image - toggle selection
+                            const newFavorites = isSelected
+                              ? favoriteImages.filter(f => f !== num)
+                              : [...favoriteImages, num];
+                            setFavoriteImages(newFavorites);
+                            await saveCelebrationSettings({
+                              celebrationMessage,
+                              favoriteImages: newFavorites
+                            });
+                          }
+                        }}
+                        className={`relative w-full aspect-square rounded-lg font-bold transition overflow-hidden flex items-center justify-center cursor-pointer ${
+                          hasImage
+                            ? isSelected
+                              ? `${currentAccent.bg} text-white ring-2 ring-offset-2 ${currentAccent.ring}`
+                              : themeMode === 'light' ? 'bg-gray-200 hover:bg-gray-300' : 'bg-white/10 hover:bg-white/20'
+                            : `${currentAccent.bg} hover:${currentAccent.hover} text-white`
+                        }`}
+                        title={`Favorite ${num}${hasImage ? ' - Click to toggle' : ' - Click to upload'}`}
+                      >
+                        {hasImage ? (
+                          <>
+                            <img
+                              src={favoriteImageUrls[num]}
+                              alt={`Favorite ${num}`}
+                              className="w-full h-full object-cover absolute inset-0"
+                            />
+                            <span className={`relative flex items-center justify-center text-lg font-bold transition-opacity ${
+                              isSelected ? 'opacity-100 text-white drop-shadow-lg' : 'opacity-0'
+                            }`}>
+                              ✓
+                            </span>
+                          </>
+                        ) : (
+                          <Plus size={28} className="relative z-0" />
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className={`text-xs ${themeMode === 'light' ? 'text-gray-500' : 'text-slate-500'} mt-2`}>
+                Click the "+" to upload an image for that favorite. Supports PNG, JPEG, and JPG formats.
+              </p>
+            </div>
+
+            {/* Upload Favorite Images */}
+            <div className="mb-6">
+              <label className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-2 block font-semibold`}>
+                Upload Favorite Images:
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={async (e) => {
+                  const files = Array.from(e.target.files);
+                  if (files.length > 5) {
+                    alert('You can only upload up to 5 favorite images');
+                    return;
+                  }
+
+                  for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const formData = new FormData();
+                    formData.append('image', file);
+                    formData.append('filename', `favorite${i + 1}.png`);
+
+                    try {
+                      await fetch(`${API_URL}/api/upload-favorite`, {
+                        method: 'POST',
+                        body: formData,
+                      });
+                    } catch (error) {
+                      console.error('Error uploading favorite image:', error);
+                    }
+                  }
+
+                  alert('Favorite images uploaded! Refresh the page to see changes.');
+                  e.target.value = '';
+                }}
+                className={`w-full ${themeMode === 'light' ? 'bg-gray-200 text-gray-900' : 'bg-white/10 text-white'} p-3 rounded-lg`}
+              />
+            </div>
+            </div>
           </div>
 
           {/* API Details Settings */}
-          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl mb-6`}>
-            <h2 className="text-2xl font-bold mb-6">API Configuration</h2>
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl shadow-xl mb-6`}>
+            <div className="p-6">
+              <h2 className="text-2xl font-bold mb-6">API Configuration</h2>
+            </div>
+            <div className="border-t border-white/10"></div>
+            <div className="p-6 pt-6">
             <p className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-6`}>
               Configure Google Calendar API credentials.
             </p>
@@ -1843,11 +2166,16 @@ const FamilyDashboard = () => {
             >
               Save API Configuration
             </button>
+            </div>
           </div>
 
           {/* Weather Settings */}
-          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl mb-6`}>
-            <h2 className="text-2xl font-bold mb-6">Weather Configuration</h2>
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl shadow-xl mb-6`}>
+            <div className="p-6">
+              <h2 className="text-2xl font-bold mb-6">Weather Configuration</h2>
+            </div>
+            <div className="border-t border-white/10"></div>
+            <div className="p-6 pt-6">
             <p className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-6`}>
               Search by postal code to automatically set location and coordinates, or manually enter latitude and longitude.
             </p>
@@ -1995,11 +2323,16 @@ const FamilyDashboard = () => {
             >
               Save Weather Configuration
             </button>
+            </div>
           </div>
 
           {/* Experience/UX Settings */}
-          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
-            <h2 className="text-2xl font-bold mb-6">Display Limits</h2>
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl shadow-xl mb-6`}>
+            <div className="p-6">
+              <h2 className="text-2xl font-bold mb-6">Display Limits</h2>
+            </div>
+            <div className="border-t border-white/10"></div>
+            <div className="p-6 pt-6">
             <p className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-6`}>
               Set the maximum number of items to display in each module before scrolling is enabled.
             </p>
@@ -2107,11 +2440,16 @@ const FamilyDashboard = () => {
                 className="w-full"
               />
             </div>
+            </div>
           </div>
 
           {/* Calendar Colors Settings */}
-          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
-            <h2 className="text-2xl font-bold mb-6">Calendar Colors</h2>
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl shadow-xl mb-6`}>
+            <div className="p-6">
+              <h2 className="text-2xl font-bold mb-6">Calendar Colors</h2>
+            </div>
+            <div className="border-t border-white/10"></div>
+            <div className="p-6 pt-6">
             <p className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-6`}>
               Set the color for each calendar's events.
             </p>
@@ -2151,11 +2489,16 @@ const FamilyDashboard = () => {
                 </div>
               </div>
             ))}
+            </div>
           </div>
 
           {/* Backup Settings */}
-          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl mt-6`}>
-            <h2 className="text-2xl font-bold mb-6">Backup Settings</h2>
+          <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl shadow-xl mb-6`}>
+            <div className="p-6">
+              <h2 className="text-2xl font-bold mb-6">Backup Settings</h2>
+            </div>
+            <div className="border-t border-white/10"></div>
+            <div className="p-6 pt-6">
             <p className={`text-sm ${themeMode === 'light' ? 'text-gray-600' : 'text-slate-400'} mb-6`}>
               Configure automatic daily backups of your data. Backups are stored as zip files.
             </p>
@@ -2300,6 +2643,7 @@ const FamilyDashboard = () => {
                 View Backups
               </button>
             </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2308,115 +2652,77 @@ const FamilyDashboard = () => {
 
   return (
     <div className={`min-h-screen w-full ${themeMode === 'light' ? 'bg-gradient-to-br from-slate-100 via-gray-100 to-slate-100 text-gray-900' : 'bg-gradient-to-br from-gray-950 via-slate-950 to-gray-950 text-white'} p-4 md:p-6 overflow-x-hidden`}>
-      {/* Hockey Goal Animation */}
+      {/* Task Completion Celebration Animation */}
       {showHockeyAnimation && (
         <div className="fixed inset-0 z-[999] pointer-events-none overflow-hidden">
-          {/* Ice rink background */}
-          <div className="absolute inset-0 bg-gradient-to-b from-blue-900/30 via-blue-800/20 to-blue-900/30"></div>
-
-          {/* Hockey Stick */}
-          <div
-            className="absolute bottom-20 left-1/3"
-            style={{
-              animation: 'slideRight 2s ease-out forwards'
-            }}
-          >
-            <svg width="80" height="80" viewBox="0 0 80 80" className="drop-shadow-lg">
-              {/* Hockey stick handle */}
-              <line x1="15" y1="10" x2="45" y2="55" stroke="#8B4513" strokeWidth="6" strokeLinecap="round" />
-              {/* Hockey stick blade */}
-              <path d="M 45 55 Q 60 60 70 58 L 68 65 Q 58 67 43 62 Z" fill="#654321" stroke="#8B4513" strokeWidth="2" />
-            </svg>
-          </div>
-
-          {/* Hockey Puck */}
-          <div
-            className="absolute bottom-24 left-1/3"
-            style={{
-              animation: 'shootPuck 2s ease-out forwards'
-            }}
-          >
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-900 via-black to-gray-800 border-2 border-gray-700 shadow-lg"></div>
-          </div>
-
-          {/* Hockey Goal */}
-          <div className="absolute bottom-20 right-1/3">
-            <svg width="100" height="100" viewBox="0 0 100 100" className="opacity-90">
-              {/* Goal frame */}
-              <rect x="10" y="30" width="80" height="60" fill="none" stroke="#DC2626" strokeWidth="4" rx="5" />
-              {/* Net pattern */}
-              <line x1="10" y1="40" x2="90" y2="40" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
-              <line x1="10" y1="50" x2="90" y2="50" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
-              <line x1="10" y1="60" x2="90" y2="60" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
-              <line x1="10" y1="70" x2="90" y2="70" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
-              <line x1="10" y1="80" x2="90" y2="80" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
-              <line x1="30" y1="30" x2="30" y2="90" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
-              <line x1="50" y1="30" x2="50" y2="90" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
-              <line x1="70" y1="30" x2="70" y2="90" stroke="#DC2626" strokeWidth="1" opacity="0.5" />
-            </svg>
-          </div>
-
-          {/* Goal Celebration Text */}
+          {/* Celebration Text */}
           <div
             className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center"
             style={{
               animation: 'popUp 3s ease-out forwards'
             }}
           >
-            <div className="text-6xl font-black text-white drop-shadow-2xl" style={{
-              textShadow: '0 0 20px rgba(255, 215, 0, 0.8), 0 0 40px rgba(255, 0, 0, 0.6)'
-            }}>
-              HE SHOOTS!
-            </div>
             <div
-              className="text-7xl font-black text-yellow-300 drop-shadow-2xl mt-4"
+              className="text-7xl font-black text-yellow-300 drop-shadow-2xl leading-tight"
               style={{
-                animation: 'pulse 0.5s ease-in-out 2s infinite',
+                animation: 'pulse 0.5s ease-in-out 0.5s infinite',
                 textShadow: '0 0 20px rgba(255, 215, 0, 0.9), 0 0 40px rgba(255, 165, 0, 0.7)'
               }}
             >
-              HE SCORES!
+              {celebrationMessage.split(/([.!?])/g).map((part, index) => {
+                // If the part is punctuation, add it to the previous line
+                if (/[.!?]/.test(part)) {
+                  return (
+                    <span key={index}>
+                      {part}
+                      {index < celebrationMessage.split(/([.!?])/g).length - 1 && <br />}
+                    </span>
+                  );
+                }
+                return <span key={index}>{part.trim()}</span>;
+              })}
             </div>
           </div>
 
-          {/* Confetti */}
-          {[...Array(20)].map((_, i) => (
-            <div
-              key={i}
-              className="absolute text-2xl"
-              style={{
-                left: `${Math.random() * 100}%`,
-                animation: `fall ${2 + Math.random() * 2}s linear forwards`,
-                animationDelay: `${Math.random() * 0.5}s`
-              }}
-            >
-              {['🎉', '⭐', '✨', '🏆'][i % 4]}
-            </div>
-          ))}
+          {/* Image Confetti */}
+          {[...Array(30)].map((_, i) => {
+            const favoriteIndex = (i % favoriteImages.length) + 1;
+            const imagePath = `/data/assets/complete_task/favorite${favoriteIndex}`;
+            return (
+              <div
+                key={i}
+                className="absolute"
+                style={{
+                  left: `${Math.random() * 100}%`,
+                  top: '-100px',
+                  animation: `fall ${3 + Math.random() * 2}s linear forwards`,
+                  animationDelay: `${Math.random() * 0.8}s`
+                }}
+              >
+                <img
+                  src={`${imagePath}.png`}
+                  alt="Celebration"
+                  className="drop-shadow-lg"
+                  style={{
+                    width: '80px',
+                    height: '80px',
+                    objectFit: 'contain',
+                    transform: `rotate(${Math.random() * 360}deg)`
+                  }}
+                  onError={(e) => {
+                    // Try alternate formats
+                    if (e.target.src.endsWith('.png')) {
+                      e.target.src = `${imagePath}.jpg`;
+                    } else if (e.target.src.endsWith('.jpg')) {
+                      e.target.src = `${imagePath}.jpeg`;
+                    }
+                  }}
+                />
+              </div>
+            );
+          })}
 
           <style>{`
-            @keyframes slideRight {
-              from {
-                transform: translateX(-500px);
-                opacity: 1;
-              }
-              to {
-                transform: translateX(400px);
-                opacity: 1;
-              }
-            }
-
-            @keyframes shootPuck {
-              from {
-                transform: translateX(-500px) translateY(0);
-                opacity: 1;
-              }
-              to {
-                transform: translateX(600px) translateY(-200px);
-                opacity: 0;
-              }
-            }
-
             @keyframes popUp {
               0% {
                 transform: translate(-50%, -50%) scale(0);
@@ -2667,12 +2973,21 @@ const FamilyDashboard = () => {
           <div className={`${themeMode === 'light' ? 'bg-white/70' : 'bg-white/5'} backdrop-blur-lg rounded-2xl p-6 shadow-xl`}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold">Tasks</h2>
-              <button
-                onClick={() => setShowTaskModal(true)}
-                className={`${currentAccent.bg} ${currentAccent.hover} p-2 rounded-full transition text-white`}
-              >
-                <Plus size={24} />
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={resetAllTasks}
+                  className={`${currentAccent.bg} ${currentAccent.hover} p-2 rounded-full transition text-white`}
+                  title="Reset All Tasks"
+                >
+                  <RotateCcw size={24} />
+                </button>
+                <button
+                  onClick={() => setShowTaskModal(true)}
+                  className={`${currentAccent.bg} ${currentAccent.hover} p-2 rounded-full transition text-white`}
+                >
+                  <Plus size={24} />
+                </button>
+              </div>
             </div>
 
             {/* Period Filter Buttons */}
@@ -2818,7 +3133,15 @@ const FamilyDashboard = () => {
 
             {/* Existing Tasks List */}
             <div className="mb-6">
-              <h4 className="text-lg font-semibold mb-3">Current Tasks</h4>
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="text-lg font-semibold">Current Tasks</h4>
+                <button
+                  onClick={resetAllTasks}
+                  className="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-lg transition text-sm font-medium"
+                >
+                  Reset All Tasks
+                </button>
+              </div>
               <div className="space-y-2">
                 {tasks.map((task, index) => (
                   <div key={index} className="bg-white/10 p-4 rounded-xl flex justify-between items-center">
@@ -2909,7 +3232,7 @@ const FamilyDashboard = () => {
                 </div>
               </div>
 
-              <div className="mb-6">
+              <div className="mb-4">
                 <label className="text-sm text-slate-400 mb-2 block">Time Period:</label>
                 <div className="flex gap-2">
                   {['Morning', 'Afternoon', 'Evening'].map(period => (
@@ -2926,6 +3249,21 @@ const FamilyDashboard = () => {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="mb-6">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newTask.oneTime || false}
+                    onChange={(e) => setNewTask({...newTask, oneTime: e.target.checked})}
+                    className="w-5 h-5 rounded bg-white/10 border-slate-600 text-teal-500 focus:ring-2 focus:ring-teal-500"
+                  />
+                  <div>
+                    <span className="text-sm font-medium">One Time Task</span>
+                    <p className="text-xs text-slate-400">Task will be deleted automatically upon completion</p>
+                  </div>
+                </label>
               </div>
 
               <button
@@ -2993,7 +3331,7 @@ const FamilyDashboard = () => {
                 className="w-full bg-white/10 p-3 rounded-lg mb-4 text-white placeholder-slate-400"
               />
 
-              <div className="mb-6">
+              <div className="mb-4">
                 <label className="text-sm text-slate-400 mb-2 block">Cost (points):</label>
                 <input
                   type="number"
@@ -3001,6 +3339,21 @@ const FamilyDashboard = () => {
                   onChange={(e) => setNewReward({...newReward, cost: parseInt(e.target.value) || 0})}
                   className="w-full bg-white/10 p-3 rounded-lg text-white"
                 />
+              </div>
+
+              <div className="mb-6">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newReward.oneTime || false}
+                    onChange={(e) => setNewReward({...newReward, oneTime: e.target.checked})}
+                    className="w-5 h-5 rounded bg-white/10 border-slate-600 text-teal-500 focus:ring-2 focus:ring-teal-500"
+                  />
+                  <div>
+                    <span className="text-sm font-medium">One Time Reward</span>
+                    <p className="text-xs text-slate-400">Reward will be deleted automatically upon redemption</p>
+                  </div>
+                </label>
               </div>
 
               <button
@@ -3320,11 +3673,11 @@ const FamilyDashboard = () => {
           {/* Weather/Time/Date Overlay - Rotates to different corners */}
           <div
             className={`absolute ${
-              clockCorner === 'bottom-left' ? 'bottom-6 left-6' :
-              clockCorner === 'bottom-right' ? 'bottom-6 right-6' :
-              clockCorner === 'top-left' ? 'top-6 left-6' :
-              'top-6 right-6'
-            } bg-black/50 backdrop-blur-md rounded-2xl p-6 text-white z-10 cursor-pointer transition-all duration-500`}
+              clockCorner === 'bottom-left' ? 'bottom-8 left-8' :
+              clockCorner === 'bottom-right' ? 'bottom-8 right-8' :
+              clockCorner === 'top-left' ? 'top-8 left-8' :
+              'top-8 right-8'
+            } bg-black/60 backdrop-blur-md rounded-3xl p-8 text-white z-10 cursor-pointer transition-all duration-500 min-w-[400px]`}
             onClick={(e) => {
               e.stopPropagation();
               setScreensaverActive(false);
@@ -3333,18 +3686,31 @@ const FamilyDashboard = () => {
               setCurrentImageIndex(0);
             }}
           >
-            <div className="text-sm text-slate-300 mb-1">{formatDate(currentTime)}</div>
-            <div className={`text-5xl font-bold mb-3 bg-gradient-to-r ${currentAccent.gradient} bg-clip-text text-transparent`}>
+            <div className="text-lg text-slate-300 mb-2">{formatDate(currentTime)}</div>
+            <div className={`text-7xl font-bold mb-4 bg-gradient-to-r ${currentAccent.gradient} bg-clip-text text-transparent`}>
               {formatTime(currentTime)}
             </div>
-            <div className="text-xs text-slate-400 mb-3">{weather.location}</div>
-            <div className="flex items-center gap-3">
-              <div style={{ transform: 'scale(0.8)', transformOrigin: 'left' }}>
+            <div className="text-base text-slate-400 mb-4">{weather.location}</div>
+            <div className="flex items-center gap-4 mb-6">
+              <div style={{ transform: 'scale(1.2)', transformOrigin: 'left' }}>
                 {getWeatherIcon(weather.weatherCode)}
               </div>
-              <div className="text-2xl font-semibold">{weather.temperature !== null ? `${weather.temperature}°${temperatureUnit === 'celsius' ? 'C' : 'F'}` : 'Loading...'}</div>
-              <div className="text-lg text-slate-300">{weather.condition}</div>
+              <div className="text-3xl font-semibold">{weather.temperature !== null ? `${weather.temperature}°${temperatureUnit === 'celsius' ? 'C' : 'F'}` : 'Loading...'}</div>
+              <div className="text-xl text-slate-300">{weather.condition}</div>
             </div>
+
+            {/* Upcoming Events */}
+            {calendarEvents.length > 0 && (
+              <div className="border-t border-white/20 pt-4">
+                <div className="text-sm text-slate-400 mb-3 uppercase tracking-wide">Upcoming Events</div>
+                {calendarEvents.slice(0, 2).map((event, index) => (
+                  <div key={event.id} className={`${index > 0 ? 'mt-3' : ''}`}>
+                    <div className="text-lg font-semibold">{event.title}</div>
+                    <div className="text-sm text-slate-300 mt-1">{event.date} • {event.time}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Close button for preview mode - Hidden */}

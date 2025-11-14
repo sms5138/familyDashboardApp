@@ -65,3 +65,9 @@ family-dashboard-v*/
 .cache/
 .npm/
 .eslintcache
+
+# photos
+web-app/data/photos
+
+# backup
+web-app/data/backups
